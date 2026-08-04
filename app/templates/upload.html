@@ -3,17 +3,160 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Upload Excel File</title>
+    <title>Reconciliation System — Upload</title>
+    <style>
+        :root {
+            --border: #d7dbe0;
+            --text: #1f2328;
+            --muted: #6b7280;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success-bg: #ecfdf3;
+            --success-text: #027a48;
+            --error-bg: #fef3f2;
+            --error-text: #b42318;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f7f8fa;
+            color: var(--text);
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 32px;
+            background: #fff;
+            border-bottom: 1px solid var(--border);
+        }
+
+        header h1 {
+            font-size: 18px;
+            margin: 0;
+        }
+
+        header nav a {
+            margin-left: 20px;
+            color: var(--muted);
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        header nav a:hover {
+            color: var(--text);
+        }
+
+        main {
+            max-width: 480px;
+            margin: 64px auto;
+            padding: 32px;
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+        }
+
+        main h2 {
+            margin-top: 0;
+            font-size: 20px;
+        }
+
+        main p.subtitle {
+            color: var(--muted);
+            font-size: 14px;
+            margin-top: -8px;
+        }
+
+        label {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px dashed var(--border);
+            border-radius: 6px;
+            font-size: 14px;
+            background: #fafafa;
+        }
+
+        button {
+            margin-top: 20px;
+            width: 100%;
+            padding: 10px 16px;
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        button:hover:not(:disabled) {
+            background: var(--primary-hover);
+        }
+
+        button:disabled {
+            background: #9db6ee;
+            cursor: not-allowed;
+        }
+
+        #status {
+            margin-top: 16px;
+            padding: 12px 14px;
+            border-radius: 6px;
+            font-size: 14px;
+            display: none;
+        }
+
+        #status.success {
+            display: block;
+            background: var(--success-bg);
+            color: var(--success-text);
+        }
+
+        #status.error {
+            display: block;
+            background: var(--error-bg);
+            color: var(--error-text);
+        }
+
+        #status dl {
+            margin: 8px 0 0;
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 4px 12px;
+            font-size: 13px;
+        }
+
+        #status dt { color: var(--muted); }
+        #status dd { margin: 0; font-weight: 600; }
+    </style>
 </head>
 <body>
 
-    <h2>Upload Excel File</h2>
+    <header>
+        <h1>Reconciliation System</h1>
+        <nav>
+            <a href="/">Upload</a>
+            <a href="/dashboard">Dashboard</a>
+        </nav>
+    </header>
 
-    <form id="uploadForm">
+    <main>
+        <h2>Upload Excel File</h2>
+        <p class="subtitle">Upload a workbook to import its rows into staging for reconciliation.</p>
 
-        <p>
-            <label>Select Excel File:</label><br>
-
+        <form id="uploadForm">
+            <label for="file">Select Excel File</label>
             <input
                 type="file"
                 id="file"
@@ -21,31 +164,45 @@
                 accept=".xlsx,.xls"
                 required
             >
-        </p>
+            <button type="submit" id="submitBtn">Upload</button>
+        </form>
 
-        <button type="submit">
-            Upload
-        </button>
-
-    </form>
+        <div id="status"></div>
+    </main>
 
 <script>
 
 const form = document.getElementById("uploadForm");
+const submitBtn = document.getElementById("submitBtn");
+const statusBox = document.getElementById("status");
+
+function showStatus(kind, html) {
+    statusBox.className = kind;
+    statusBox.innerHTML = html;
+}
+
+function clearStatus() {
+    statusBox.className = "";
+    statusBox.innerHTML = "";
+}
 
 form.addEventListener("submit", async (event) => {
 
     event.preventDefault();
+    clearStatus();
 
     const fileInput = document.getElementById("file");
 
     if (fileInput.files.length === 0) {
-        alert("Please select a file.");
+        showStatus("error", "Please select a file.");
         return;
     }
 
     const formData = new FormData();
     formData.append("file", fileInput.files[0]);
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Uploading…";
 
     try {
 
@@ -58,32 +215,32 @@ form.addEventListener("submit", async (event) => {
 
         if (response.ok) {
 
-            alert("Upload Successful!");
-
-            console.log(result);
-
-            /*
-            Example response
-
-            {
-                organization: "...",
-                uploaded_file_id: 1,
-                total_sheets: 6,
-                total_rows_imported: 52341,
-                status: "Imported Successfully"
-            }
-            */
+            showStatus("success", `
+                <strong>Upload successful.</strong>
+                <dl>
+                    <dt>Organization</dt><dd>${result.organization}</dd>
+                    <dt>Sheets imported</dt><dd>${result.total_sheets}</dd>
+                    <dt>Rows imported</dt><dd>${result.total_rows_imported}</dd>
+                    <dt>Status</dt><dd>${result.status}</dd>
+                </dl>
+            `);
+            form.reset();
 
         } else {
 
-            alert(result.detail || "Upload failed.");
+            showStatus("error", result.detail || "Upload failed.");
 
         }
 
     } catch (error) {
 
         console.error(error);
-        alert("Unable to connect to the server.");
+        showStatus("error", "Unable to connect to the server.");
+
+    } finally {
+
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Upload";
 
     }
 

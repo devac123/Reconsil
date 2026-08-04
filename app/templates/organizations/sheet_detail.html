@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Organizations</title>
+</head>
+<body>
+
+<h2>Organization List</h2>
+
+<table border="1" cellpadding="10">
+
+    <tr>
+        <th>ID</th>
+        <th>Sheet ID</th>
+        <th>Row No.</th>
+        <th>Total Columns</th>
+        <th>PNR</th>
+        <th>raw data</th>
+        
+    </tr>
+
+    {% for sheet_record in sheet_records %}
+     1
+    <tr>
+        <td>{{ sheet_record.id }}</td>
+        <td>{{ sheet_record.uploaded_sheet_id }}</td>
+        <td>{{ sheet_record.row_number }}</td>
+        <td>{{ sheet_record.pnr }}</td>
+        <!-- <td>{{ sheet_record.raw_data }}</td> -->
+        
+    </tr>
+
+    {% endfor %}
+
+</table>
+
+<a href="/organizations">Organizations</a>
+
+</body>
+</html>

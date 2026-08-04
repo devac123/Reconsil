@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Organizations</title>
+</head>
+<body>
+
+<h2>Organization List</h2>
+
+<table border="1" cellpadding="10">
+
+    <tr>
+        <th>ID</th>
+        <th>Sheet Name</th>
+        <th>Total Rows</th>
+        <th>Total Columns</th>
+        <th>Sheet Data</th>
+    </tr>
+
+    {% for sheet in sheets %}
+
+    <tr>
+        <td>{{ sheet.id }}</td>
+        <td>{{ sheet.sheet_name }}</td>
+        <td>{{ sheet.total_rows }}</td>
+        <td>{{ sheet.total_columns }}</td>
+        <td><a href="/sheet/{{ sheet.id }}">View Data</a></td>
+    </tr>
+
+    {% endfor %}
+
+</table>
+
+<a href="/organizations">Organizations</a>
+
+</body>
+</html>

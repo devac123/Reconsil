@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Organizations</title>
+</head>
+<body>
+
+<h2>Organization List</h2>
+
+<table border="1" cellpadding="10">
+
+    <tr>
+        <th>ID</th>
+        <th>Name</th>
+        <th>Code</th>
+        <th>Status</th>
+    </tr>
+
+    {% for organization in organizations %}
+
+    <tr>
+        <td>{{ organization.id }}</td>
+        <td>{{ organization.name }}</td>
+        <td>{{ organization.code }}</td>
+        <td>{{ organization.status }}</td>
+    </tr>
+
+    {% endfor %}
+
+</table>
+
+<a href="/sheets">Sheets</a>
+
+</body>
+</html>
