@@ -82,15 +82,20 @@ class StagingRecordRepository:
 
         now = datetime.utcnow()
 
-        # Build flat list of insert mappings
+        # Build flat list of insert mappings.
+        # pnr / ticket_number / transaction_date are optional — the service
+        # sets them when it can resolve them from the per-sheet field map.
         mappings = [
             {
                 "uploaded_sheet_id": uploaded_sheet_id,
-                "row_number": row["row_number"],
-                "raw_data": row["raw_data"],
-                "is_processed": False,
-                "created_at": now,
-                "updated_at": now,
+                "row_number":        row["row_number"],
+                "pnr":               row.get("pnr"),
+                "ticket_number":     row.get("ticket_number"),
+                "transaction_date":  row.get("transaction_date"),
+                "raw_data":          row["raw_data"],
+                "is_processed":      False,
+                "created_at":        now,
+                "updated_at":        now,
             }
             for row in rows
         ]

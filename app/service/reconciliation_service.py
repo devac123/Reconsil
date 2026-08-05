@@ -1,0 +1,422 @@
+"""
+Reconciliation Service
+----------------------
+Implements the core Indigo Cost-vs-Revenue reconciliation logic.
+
+Algorithm (mirrors the original "Reconcilation" sheet)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For a given uploaded file the engine:
+
+1.  Loads staged rows for the 5 source sheets from the DB.
+2.  Builds per-PNR aggregates for each data source:
+
+    COST side  (AIR COST TRN)
+        PNR key   : RecordLocator
+        Sale amt  : sum of PaymentAmount where Debit or Credit == "Debit"
+        Refund amt: sum of abs(PaymentAmount) where Debit or Credit == "Credit"
+        Net       : sale − refund
+
+    CASH X side
+        Sale  (CASH x SAle)  → PNR key: Formatted PNR,  amount: GROSS FARE
+        Refund(CASH X Re)    → PNR key: PNR formatted,  amount: GROSS FARE
+        Net   = sale − refund
+
+    SPYJ side
+        Sale  (SPYJ SALE)    → PNR key: GDS PNR,  amount: Total Amount
+        Refund(SPJY Refund)  → PNR key: GDS PNR,  amount: Total Refund Amount
+        Net   = sale − refund
+
+3.  Collects every unique PNR across all three data sources.
+4.  For each PNR computes:
+        variance = cost_net − cashx_net − spyj_net
+5.  Assigns a remark using the same rules visible in the sample data:
+        |variance| < 1          → "Matched"
+        300 ± 5                 → "Markup/Booking Charges"
+        cost_pnr == "not found" → "Not in Cost"
+        cashx_pnr == "not found"→ "Not in CASH X"
+        spyj_pnr == "not found" → "Not in SPYJ"
+        otherwise               → "Variance"
+6.  Bulk-inserts all result rows into ``reconciliation_results``.
+7.  Returns the count of rows produced.
+"""
+
+import logging
+from collections import defaultdict
+from datetime import datetime
+
+from sqlalchemy import insert, text
+from sqlalchemy.orm import Session
+
+from app.models.reconciliation_result import ReconciliationResult
+from app.models.uploaded_sheet import UploadedSheet
+from app.models.staging_record import StagingRecord
+
+logger = logging.getLogger(__name__)
+
+_CHUNK_SIZE = 500
+
+# ---------------------------------------------------------------------------
+# Sheet-name constants (normalised)
+# ---------------------------------------------------------------------------
+_SHEET_AIR_COST   = "air cost trn"
+_SHEET_CASHX_SALE = "cash x sale"
+_SHEET_CASHX_RE   = "cash x re"
+_SHEET_SPYJ_SALE  = "spyj sale"
+_SHEET_SPJY_REF   = "spjy refund"
+
+# ---------------------------------------------------------------------------
+# Remark assignment thresholds
+# ---------------------------------------------------------------------------
+_MARKUP_VALUE   = 300.0
+_MARKUP_TOL     = 10.0   # ±10 around 300 → "Markup/Booking Charges"
+_MATCH_TOL      = 1.0    # |variance| < 1 → "Matched"
+
+
+def _safe_float(value) -> float:
+    """Convert *value* to float; return 0.0 for None / non-numeric."""
+    if value is None:
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _assign_remark(
+    variance: float,
+    cost_found: bool,
+    cashx_found: bool,
+    spyj_found: bool,
+) -> str:
+    """Return a human-readable remark for a reconciled PNR row."""
+    if abs(variance) < _MATCH_TOL:
+        return "Matched"
+    if abs(abs(variance) - _MARKUP_VALUE) <= _MARKUP_TOL:
+        return "Markup/Booking Charges"
+    if not cost_found:
+        return "Not in Cost"
+    if not cashx_found:
+        return "Not in CASH X"
+    if not spyj_found:
+        return "Not in SPYJ"
+    return "Variance"
+
+
+class ReconciliationService:
+    """
+    Runs the full Cost-vs-Revenue reconciliation for one uploaded file and
+    persists the results to ``reconciliation_results``.
+    """
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    # ------------------------------------------------------------------ #
+    # Public API                                                           #
+    # ------------------------------------------------------------------ #
+
+    def reconcile(self, uploaded_file_id: int) -> int:
+        """
+        Run reconciliation for *uploaded_file_id*.
+
+        Deletes any existing results for this file, recomputes, and inserts
+        fresh rows.
+
+        Returns
+        -------
+        int
+            Number of reconciled PNR rows produced.
+        """
+        logger.info(
+            "Starting reconciliation for uploaded_file_id=%s.", uploaded_file_id
+        )
+
+        # Remove stale results from a previous run (if any)
+        self._db.execute(
+            text(
+                "DELETE FROM reconciliation_results "
+                "WHERE uploaded_file_id = :fid"
+            ),
+            {"fid": uploaded_file_id},
+        )
+
+        # Load sheet-id map: normalised_sheet_name → sheet_id
+        sheet_map = self._load_sheet_map(uploaded_file_id)
+        logger.info("Sheet map: %s", {k: v for k, v in sheet_map.items()})
+
+        # Build aggregates per data source
+        cost_agg   = self._aggregate_cost(sheet_map)
+        cashx_sale = self._aggregate_gross_fare(sheet_map, _SHEET_CASHX_SALE)
+        cashx_re   = self._aggregate_gross_fare(sheet_map, _SHEET_CASHX_RE)
+        spyj_sale  = self._aggregate_spyj_sale(sheet_map)
+        spyj_ref   = self._aggregate_spyj_refund(sheet_map)
+
+        # CASH X net = sale - refund  (keyed by PNR)
+        cashx_agg = self._merge_sale_refund(cashx_sale, cashx_re)
+
+        # SPYJ net = sale - refund
+        spyj_agg = self._merge_sale_refund(spyj_sale, spyj_ref)
+
+        # Union of all PNRs
+        all_pnrs = (
+            set(cost_agg.keys())
+            | set(cashx_agg.keys())
+            | set(spyj_agg.keys())
+        )
+
+        logger.info("Total unique PNRs to reconcile: %s", len(all_pnrs))
+
+        # Build result rows
+        rows = []
+        now = datetime.utcnow()
+
+        for pnr in all_pnrs:
+            c = cost_agg.get(pnr)
+            x = cashx_agg.get(pnr)
+            s = spyj_agg.get(pnr)
+
+            cost_sale   = c["sale"]   if c else 0.0
+            cost_refund = c["refund"] if c else 0.0
+            cost_net    = c["net"]    if c else 0.0
+
+            cashx_amount = x["sale"]   if x else 0.0
+            cashx_refund = x["refund"] if x else 0.0
+            cashx_net    = x["net"]    if x else 0.0
+
+            spyj_amount = s["sale"]   if s else 0.0
+            spyj_refund = s["refund"] if s else 0.0
+            spyj_net    = s["net"]    if s else 0.0
+
+            variance = cost_net - cashx_net - spyj_net
+
+            remark = _assign_remark(
+                variance,
+                cost_found=bool(c),
+                cashx_found=bool(x),
+                spyj_found=bool(s),
+            )
+
+            rows.append({
+                "uploaded_file_id": uploaded_file_id,
+                "pnr":              pnr,
+
+                "cost_pnr":    pnr if c else "not found",
+                "cost_sale":   cost_sale,
+                "cost_refund": cost_refund,
+                "cost_net":    cost_net,
+
+                "cashx_pnr":    pnr if x else "not found",
+                "cashx_amount": cashx_amount,
+                "cashx_refund": cashx_refund,
+                "cashx_net":    cashx_net,
+
+                "spyj_pnr":    pnr if s else "not found",
+                "spyj_amount": spyj_amount,
+                "spyj_refund": spyj_refund,
+                "spyj_net":    spyj_net,
+
+                "variance":       round(variance, 2),
+                "remark":         remark,
+                "revised_remark": None,
+                "final_remark":   None,
+
+                "created_at": now,
+                "updated_at": now,
+            })
+
+        # Bulk-insert in chunks
+        total_inserted = self._bulk_insert(rows)
+
+        self._db.commit()
+        logger.info(
+            "Reconciliation complete for file_id=%s: %s rows produced.",
+            uploaded_file_id,
+            total_inserted,
+        )
+        return total_inserted
+
+    # ------------------------------------------------------------------ #
+    # Sheet loading helpers                                                #
+    # ------------------------------------------------------------------ #
+
+    def _load_sheet_map(self, uploaded_file_id: int) -> dict[str, int]:
+        """
+        Return a dict of normalised_sheet_name → sheet_id for *uploaded_file_id*.
+        """
+        sheets = (
+            self._db.query(UploadedSheet)
+            .filter(UploadedSheet.uploaded_file_id == uploaded_file_id)
+            .all()
+        )
+        return {s.sheet_name.strip().lower(): s.id for s in sheets}
+
+    def _iter_rows(self, sheet_id: int | None):
+        """
+        Yield raw_data dicts for every staging record in *sheet_id*.
+        Uses chunked iteration to stay memory-efficient.
+        """
+        if sheet_id is None:
+            return
+
+        offset = 0
+        while True:
+            chunk = (
+                self._db.query(StagingRecord.raw_data)
+                .filter(StagingRecord.uploaded_sheet_id == sheet_id)
+                .order_by(StagingRecord.row_number)
+                .offset(offset)
+                .limit(_CHUNK_SIZE)
+                .all()
+            )
+            if not chunk:
+                break
+            for (raw_data,) in chunk:
+                yield raw_data
+            if len(chunk) < _CHUNK_SIZE:
+                break
+            offset += _CHUNK_SIZE
+
+    # ------------------------------------------------------------------ #
+    # Per-source aggregation                                               #
+    # ------------------------------------------------------------------ #
+
+    def _aggregate_cost(self, sheet_map: dict) -> dict[str, dict]:
+        """
+        Aggregate AIR COST TRN rows by RecordLocator.
+
+        Debit  rows → add to sale.
+        Credit rows → add to refund (store as positive).
+        """
+        sheet_id = sheet_map.get(_SHEET_AIR_COST)
+        agg: dict[str, dict] = defaultdict(lambda: {"sale": 0.0, "refund": 0.0})
+
+        for raw in self._iter_rows(sheet_id):
+            pnr = str(raw.get("RecordLocator") or "").strip()
+            if not pnr or pnr.lower() in ("nan", "none", ""):
+                continue
+
+            amount = _safe_float(raw.get("PaymentAmount"))
+            dc = str(raw.get("Debit or Credit") or "").strip().lower()
+
+            if dc == "debit":
+                agg[pnr]["sale"] += amount
+            elif dc == "credit":
+                agg[pnr]["refund"] += abs(amount)
+
+        result = {}
+        for pnr, v in agg.items():
+            v["net"] = round(v["sale"] - v["refund"], 2)
+            v["sale"]   = round(v["sale"], 2)
+            v["refund"] = round(v["refund"], 2)
+            result[pnr] = v
+
+        logger.info("AIR COST TRN: %s unique PNRs aggregated.", len(result))
+        return result
+
+    def _aggregate_gross_fare(
+        self, sheet_map: dict, sheet_key: str
+    ) -> dict[str, float]:
+        """
+        Aggregate GROSS FARE by PNR for CASH x SAle or CASH X Re.
+
+        PNR column:
+          CASH x SAle  → "Formatted PNR"
+          CASH X Re    → "PNR formatted"
+        """
+        sheet_id = sheet_map.get(sheet_key)
+        pnr_col = "Formatted PNR" if sheet_key == _SHEET_CASHX_SALE else "PNR formatted"
+
+        agg: dict[str, float] = defaultdict(float)
+
+        for raw in self._iter_rows(sheet_id):
+            pnr = str(raw.get(pnr_col) or "").strip()
+            if not pnr or pnr.lower() in ("nan", "none", ""):
+                continue
+            agg[pnr] += _safe_float(raw.get("GROSS FARE"))
+
+        result = {pnr: round(v, 2) for pnr, v in agg.items()}
+        logger.info("%s: %s unique PNRs aggregated.", sheet_key, len(result))
+        return result
+
+    def _aggregate_spyj_sale(self, sheet_map: dict) -> dict[str, float]:
+        """Aggregate SPYJ SALE: Total Amount by GDS PNR."""
+        sheet_id = sheet_map.get(_SHEET_SPYJ_SALE)
+        agg: dict[str, float] = defaultdict(float)
+
+        for raw in self._iter_rows(sheet_id):
+            pnr = str(raw.get("GDS PNR") or "").strip()
+            if not pnr or pnr.lower() in ("nan", "none", ""):
+                continue
+            agg[pnr] += _safe_float(raw.get("Total Amount"))
+
+        result = {pnr: round(v, 2) for pnr, v in agg.items()}
+        logger.info("SPYJ SALE: %s unique PNRs aggregated.", len(result))
+        return result
+
+    def _aggregate_spyj_refund(self, sheet_map: dict) -> dict[str, float]:
+        """Aggregate SPJY Refund: Total Refund Amount by GDS PNR."""
+        sheet_id = sheet_map.get(_SHEET_SPJY_REF)
+        agg: dict[str, float] = defaultdict(float)
+
+        for raw in self._iter_rows(sheet_id):
+            pnr = str(raw.get("GDS PNR") or "").strip()
+            if not pnr or pnr.lower() in ("nan", "none", ""):
+                continue
+            agg[pnr] += _safe_float(raw.get("Total Refund Amount"))
+
+        result = {pnr: round(v, 2) for pnr, v in agg.items()}
+        logger.info("SPJY Refund: %s unique PNRs aggregated.", len(result))
+        return result
+
+    # ------------------------------------------------------------------ #
+    # Merge helpers                                                        #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _merge_sale_refund(
+        sale_agg: dict[str, float],
+        refund_agg: dict[str, float],
+    ) -> dict[str, dict]:
+        """
+        Combine separate sale and refund dicts (both keyed by PNR) into a
+        unified dict with keys ``sale``, ``refund``, ``net``.
+
+        PNRs present in only one of the two inputs are included with 0 for
+        the missing side.
+        """
+        all_pnrs = set(sale_agg.keys()) | set(refund_agg.keys())
+        result = {}
+        for pnr in all_pnrs:
+            sale   = sale_agg.get(pnr, 0.0)
+            refund = refund_agg.get(pnr, 0.0)
+            result[pnr] = {
+                "sale":   round(sale, 2),
+                "refund": round(refund, 2),
+                "net":    round(sale - refund, 2),
+            }
+        return result
+
+    # ------------------------------------------------------------------ #
+    # Bulk insert                                                          #
+    # ------------------------------------------------------------------ #
+
+    def _bulk_insert(self, rows: list[dict]) -> int:
+        """Insert *rows* into reconciliation_results in chunks."""
+        if not rows:
+            return 0
+
+        total = 0
+        stmt = insert(ReconciliationResult)
+
+        for start in range(0, len(rows), _CHUNK_SIZE):
+            chunk = rows[start : start + _CHUNK_SIZE]
+            self._db.execute(stmt, chunk)
+            total += len(chunk)
+            logger.debug(
+                "  Inserted reconciliation rows %s–%s.",
+                start + 1,
+                start + len(chunk),
+            )
+
+        return total

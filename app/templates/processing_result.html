@@ -93,7 +93,92 @@
         Upload Another
       </a>
     </div>
+
+    <!-- ── Reconciliation Section ───────────────────────────────────── -->
+    <div class="w-full mt-xl border-t border-outline-variant pt-xl">
+
+      <h2 class="font-headline-sm text-headline-sm text-on-surface mb-xs text-center">
+        Reconciliation
+      </h2>
+      <p class="font-body-sm text-body-sm text-on-surface-variant text-center mb-lg max-w-[480px] mx-auto">
+        Run the Cost-vs-Revenue reconciliation engine and download the result sheet.
+      </p>
+
+      <!-- Status / result banner (hidden until JS populates it) -->
+      <div id="recon-status" class="hidden rounded-lg px-lg py-md mb-lg text-center font-body-md text-body-md"></div>
+
+      <div class="flex flex-col sm:flex-row gap-md justify-center items-center">
+
+        <!-- Run reconciliation button -->
+        <button
+          id="btn-reconcile"
+          onclick="runReconciliation({{ uploaded_file.id }})"
+          class="bg-secondary text-on-secondary font-label-md text-label-md px-lg py-[10px] rounded-lg
+                 hover:opacity-90 transition-opacity flex items-center justify-center gap-xs
+                 disabled:opacity-50 disabled:cursor-not-allowed">
+          <span class="material-symbols-outlined text-[18px]">play_circle</span>
+          <span id="btn-reconcile-label">Run Reconciliation</span>
+        </button>
+
+        <!-- Download result button (initially hidden; shown after successful run) -->
+        <a
+          id="btn-download"
+          href="/files/{{ uploaded_file.id }}/reconcile/download"
+          class="hidden bg-tertiary text-on-tertiary font-label-md text-label-md px-lg py-[10px]
+                 rounded-lg hover:opacity-90 transition-opacity
+                 flex items-center justify-center gap-xs">
+          <span class="material-symbols-outlined text-[18px]">download</span>
+          Download Result Sheet
+        </a>
+
+      </div>
+    </div>
   </div>
 
 </main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function runReconciliation(fileId) {
+  const btn         = document.getElementById('btn-reconcile');
+  const label       = document.getElementById('btn-reconcile-label');
+  const statusBox   = document.getElementById('recon-status');
+  const downloadBtn = document.getElementById('btn-download');
+
+  // Disable button and show loading state
+  btn.disabled = true;
+  label.textContent = 'Running…';
+  statusBox.className = 'rounded-lg px-lg py-md mb-lg text-center font-body-md text-body-md '
+    + 'bg-surface border border-outline-variant text-on-surface-variant';
+  statusBox.textContent = 'Reconciliation in progress — this may take a moment for large files…';
+  statusBox.classList.remove('hidden');
+  downloadBtn.classList.add('hidden');
+
+  try {
+    const resp = await fetch(`/files/${fileId}/reconcile`, { method: 'POST' });
+    const data = await resp.json();
+
+    if (resp.ok) {
+      statusBox.className = 'rounded-lg px-lg py-md mb-lg text-center font-body-md text-body-md '
+        + 'bg-[#F0FDF4] border border-[#BBF7D0] text-[#166534]';
+      statusBox.textContent = `✓ ${data.message}`;
+      downloadBtn.classList.remove('hidden');
+      label.textContent = 'Run Again';
+    } else {
+      statusBox.className = 'rounded-lg px-lg py-md mb-lg text-center font-body-md text-body-md '
+        + 'bg-[#FEF2F2] border border-[#FECACA] text-[#991B1B]';
+      statusBox.textContent = `✗ Error: ${data.detail || 'Reconciliation failed.'}`;
+      label.textContent = 'Run Reconciliation';
+    }
+  } catch (err) {
+    statusBox.className = 'rounded-lg px-lg py-md mb-lg text-center font-body-md text-body-md '
+      + 'bg-[#FEF2F2] border border-[#FECACA] text-[#991B1B]';
+    statusBox.textContent = `✗ Network error: ${err.message}`;
+    label.textContent = 'Run Reconciliation';
+  } finally {
+    btn.disabled = false;
+  }
+}
+</script>
 {% endblock %}

@@ -8,5 +8,6 @@ from app.models.uploaded_sheet import UploadedSheet
 from app.models.staging_record import StagingRecord
 from app.models.file_mapping import FileMapping
 from app.models.transaction import Transaction
+from app.models.reconciliation_result import ReconciliationResult
 
 Base.metadata.create_all(bind=engine)
