@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}{{ org.name }} – ReconSystem{% endblock %}
+
+{% block extra_styles %}
+.tab-content          { display: none; }
+.tab-content.active   { display: block; }
+.data-table tbody tr:nth-child(even) { background-color: #f8f9fa; }
+{% endblock %}
+
+{% block content %}
+<main class="max-w-[1440px] mx-auto px-margin py-lg flex flex-col gap-lg">
+
+  <!-- Breadcrumbs -->
+  <div class="flex items-center gap-sm text-on-surface-variant font-label-md text-label-md">
+    <a href="/organizations" class="hover:text-primary transition-colors">Organizations</a>
+    <span class="material-symbols-outlined text-[16px]">chevron_right</span>
+    <span class="text-on-surface">{{ org.name }}</span>
+  </div>
+
+  <!-- Organization Info Card -->
+  <section class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col gap-md shadow-sm">
+    <div class="flex flex-col sm:flex-row justify-between items-start gap-md">
+      <div class="flex flex-col gap-xs">
+        <div class="flex flex-wrap items-center gap-md">
+          <h1 class="font-headline-md text-headline-md text-on-surface">{{ org.name }}</h1>
+          {% if org.is_active %}
+            <span class="bg-secondary-fixed text-on-secondary-fixed px-2 py-[2px] rounded border border-secondary-fixed-dim
+                         font-label-md text-label-md uppercase tracking-wider flex items-center gap-1">
+              <span class="material-symbols-outlined text-[14px]">check_circle</span> Active
+            </span>
+          {% else %}
+            <span class="bg-surface-variant text-on-surface-variant px-2 py-[2px] rounded border border-outline-variant
+                         font-label-md text-label-md uppercase tracking-wider">
+              Inactive
+            </span>
+          {% endif %}
+        </div>
+        <div class="flex flex-wrap items-center gap-md text-on-surface-variant font-body-sm text-body-sm">
+          <span class="flex items-center gap-1">
+            <span class="material-symbols-outlined text-[16px]">tag</span>
+            Code: <span class="font-data-mono text-data-mono text-on-surface ml-1">{{ org.code }}</span>
+          </span>
+          <span class="text-outline-variant">|</span>
+          <span class="flex items-center gap-1">
+            <span class="material-symbols-outlined text-[16px]">calendar_today</span>
+            Created {{ org.created_at.strftime('%b %d, %Y') if org.created_at else '—' }}
+          </span>
+        </div>
+      </div>
+
+      <div class="flex gap-sm">
+        <a href="/upload"
+           class="bg-primary-container text-on-primary font-label-md text-label-md px-md py-sm
+                  rounded-lg hover:opacity-90 transition-opacity flex items-center gap-2">
+          <span class="material-symbols-outlined text-[18px]">upload</span>
+          Upload File
+        </a>
+      </div>
+    </div>
+    {% if org.description %}
+    <p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">{{ org.description }}</p>
+    {% endif %}
+  </section>
+
+  <!-- Tabbed Interface -->
+  <section>
+    <!-- Tab Buttons -->
+    <div class="flex gap-lg border-b border-outline-variant mb-md px-xs">
+      <button id="tab-btn-uploaded-files"
+              onclick="switchTab('uploaded-files')"
+              class="font-label-md text-label-md pb-sm border-b-2 text-primary border-primary transition-colors uppercase">
+        Uploaded Files
+      </button>
+      <button id="tab-btn-column-mappings"
+              onclick="switchTab('column-mappings')"
+              class="font-label-md text-label-md pb-sm border-b-2 text-on-surface-variant border-transparent
+                     hover:text-on-surface transition-colors uppercase">
+        Column Mappings
+      </button>
+    </div>
+
+    <!-- ── Tab: Uploaded Files ────────────────────────────────────────────── -->
+    <div class="tab-content active" id="tab-uploaded-files">
+      <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse data-table">
+            <thead class="bg-surface border-b border-outline-variant">
+              <tr>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider w-[40%]">Filename</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Upload Date</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Status</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">Size</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for f in uploaded_files %}
+              <tr class="border-b border-outline-variant/50 hover:bg-surface-container-low transition-colors h-[48px] group">
+                <td class="px-md py-sm font-body-sm text-body-sm text-on-surface flex items-center gap-sm">
+                  <span class="material-symbols-outlined text-outline-variant text-[20px]">description</span>
+                  {{ f.original_filename }}
+                </td>
+                <td class="px-md py-sm font-body-sm text-body-sm text-on-surface-variant">
+                  {{ f.uploaded_at.strftime('%b %d, %Y  %H:%M') if f.uploaded_at else '—' }}
+                </td>
+                <td class="px-md py-sm">
+                  {% if f.upload_status.value == 'PROCESSED' %}
+                    <span class="bg-primary-fixed text-on-primary-fixed px-2 py-[2px] rounded border border-primary-fixed-dim font-label-md text-label-md">Processed</span>
+                  {% elif f.upload_status.value == 'PROCESSING' %}
+                    <span class="bg-[#FFFBEB] text-[#92400E] px-2 py-[2px] rounded border border-[#fde68a] font-label-md text-label-md flex items-center gap-1">
+                      <span class="material-symbols-outlined text-[12px] animate-spin">sync</span>Processing
+                    </span>
+                  {% elif f.upload_status.value == 'FAILED' %}
+                    <span class="bg-error-container text-on-error-container px-2 py-[2px] rounded border border-error-container font-label-md text-label-md">Failed</span>
+                  {% else %}
+                    <span class="bg-surface-container-high text-on-surface-variant px-2 py-[2px] rounded border border-outline-variant font-label-md text-label-md">Uploaded</span>
+                  {% endif %}
+                </td>
+                <td class="px-md py-sm font-data-mono text-data-mono text-on-surface-variant text-right">
+                  {% if f.file_size %}
+                    {% if f.file_size < 1048576 %}{{ (f.file_size / 1024)|round(1) }} KB
+                    {% else %}{{ (f.file_size / 1048576)|round(1) }} MB{% endif %}
+                  {% else %}—{% endif %}
+                </td>
+                <td class="px-md py-sm text-right">
+                  <div class="flex items-center justify-end gap-sm">
+                    <a href="/sheets-data/{{ f.id }}"
+                       class="text-primary font-label-md text-label-md hover:underline flex items-center gap-xs">
+                      <span class="material-symbols-outlined text-[14px]">table_chart</span>View Data
+                    </a>
+                    {% if f.upload_status.value == 'UPLOADED' %}
+                      <span class="text-outline-variant">·</span>
+                      <a href="/file-mapping-ui/{{ f.id }}"
+                         class="text-secondary font-label-md text-label-md hover:underline">Map</a>
+                    {% elif f.upload_status.value == 'PROCESSED' %}
+                      <span class="text-outline-variant">·</span>
+                      <a href="/processing-result/{{ f.id }}"
+                         class="text-secondary font-label-md text-label-md hover:underline">Result</a>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="5" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+                  No files uploaded for this organization yet.
+                  <a href="/upload" class="text-primary hover:underline ml-xs">Upload now →</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if uploaded_files %}
+        <div class="px-md py-sm border-t border-outline-variant bg-surface flex items-center justify-between">
+          <span class="font-body-sm text-body-sm text-on-surface-variant">
+            {{ uploaded_files | length }} file{{ 's' if uploaded_files | length != 1 }}
+          </span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ── Tab: Column Mappings ───────────────────────────────────────────── -->
+    <div class="tab-content" id="tab-column-mappings">
+      <div class="flex justify-between items-center mb-md">
+        <p class="font-body-sm text-body-sm text-on-surface-variant">
+          Mappings are grouped by sheet name. Each row shows excel column → system field.
+        </p>
+      </div>
+
+      {% if mappings_by_sheet %}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-lg">
+          {% for sheet_name, entries in mappings_by_sheet.items() %}
+          <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+            <div class="bg-surface px-md py-sm border-b border-outline-variant flex justify-between items-center">
+              <h3 class="font-label-md text-label-md uppercase text-on-surface flex items-center gap-2">
+                <span class="material-symbols-outlined text-[18px] text-on-surface-variant">table_chart</span>
+                Sheet: {{ sheet_name }}
+              </h3>
+              <span class="font-label-md text-label-md text-on-surface-variant">{{ entries | length }} mappings</span>
+            </div>
+            <div class="p-md flex flex-col gap-sm">
+              {% for m in entries %}
+              <div class="grid grid-cols-[1fr_24px_1fr] items-center gap-sm p-sm rounded
+                          bg-surface-container border border-surface-variant">
+                <span class="font-data-mono text-data-mono text-on-surface truncate">{{ m.excel_column }}</span>
+                <span class="material-symbols-outlined text-outline-variant text-[16px] justify-self-center">arrow_right_alt</span>
+                <span class="font-data-mono text-data-mono text-primary font-semibold truncate">{{ m.system_field }}</span>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-xl text-center">
+          <span class="material-symbols-outlined text-outline text-[48px] mb-md block">schema</span>
+          <p class="font-body-md text-body-md text-on-surface-variant mb-md">
+            No column mappings configured for this organization.
+          </p>
+          <p class="font-body-sm text-body-sm text-outline">
+            Upload a file and use the column mapping UI to create mappings.
+          </p>
+        </div>
+      {% endif %}
+    </div>
+
+  </section>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function switchTab(tabId) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('[id^="tab-btn-"]').forEach(el => {
+      el.classList.remove('text-primary', 'border-primary');
+      el.classList.add('text-on-surface-variant', 'border-transparent');
+    });
+    document.getElementById('tab-' + tabId).classList.add('active');
+    const btn = document.getElementById('tab-btn-' + tabId);
+    btn.classList.remove('text-on-surface-variant', 'border-transparent');
+    btn.classList.add('text-primary', 'border-primary');
+  }
+</script>
+{% endblock %}

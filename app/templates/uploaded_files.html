@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+
+{% block title %}Uploaded Files – ReconSystem{% endblock %}
+
+{% block extra_styles %}
+.table-row-hover:hover { background-color: #f3f4f6 !important; }
+{% endblock %}
+
+{% block content %}
+<main class="max-w-[1440px] mx-auto px-margin pt-lg pb-xl flex flex-col gap-lg">
+
+  <!-- Page Header -->
+  <header class="flex flex-col sm:flex-row justify-between items-end gap-md">
+    <div>
+      <h1 class="font-headline-md text-headline-md text-on-surface">Uploaded Files Repository</h1>
+      <p class="font-body-sm text-body-sm text-on-surface-variant mt-xs">
+        Manage and process raw data files across all organizations.
+      </p>
+    </div>
+    <div class="flex gap-sm">
+      <a href="/upload"
+         class="bg-primary-container text-on-primary font-label-md text-label-md px-md py-sm rounded
+                hover:opacity-90 transition-opacity flex items-center gap-xs">
+        <span class="material-symbols-outlined text-[18px]">cloud_upload</span>
+        New Upload
+      </a>
+    </div>
+  </header>
+
+  <!-- Table Container -->
+  <div class="bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden shadow-sm flex flex-col">
+
+    <!-- Filter Strip -->
+    <div class="px-md py-sm border-b border-outline-variant bg-surface flex flex-wrap justify-between items-center gap-sm">
+      <div class="flex gap-md flex-wrap items-center">
+        <!-- Organization filter -->
+        <select id="filter-org"
+                class="bg-surface-container-lowest border-none text-body-sm font-body-sm
+                       py-xs pl-0 pr-xl focus:ring-0 text-on-surface-variant cursor-pointer">
+          <option value="">All Organizations</option>
+          {% for org in organizations %}
+          <option value="{{ org.id }}" {% if selected_org_id == org.id %}selected{% endif %}>
+            {{ org.name }}
+          </option>
+          {% endfor %}
+        </select>
+        <div class="w-px h-4 bg-outline-variant"></div>
+        <!-- Status filter -->
+        <select id="filter-status"
+                class="bg-surface-container-lowest border-none text-body-sm font-body-sm
+                       py-xs pl-0 pr-xl focus:ring-0 text-on-surface-variant cursor-pointer">
+          <option value="">All Statuses</option>
+          <option value="UPLOADED"   {% if selected_status == 'UPLOADED'   %}selected{% endif %}>Uploaded</option>
+          <option value="PROCESSING" {% if selected_status == 'PROCESSING' %}selected{% endif %}>Processing</option>
+          <option value="PROCESSED"  {% if selected_status == 'PROCESSED'  %}selected{% endif %}>Processed</option>
+          <option value="FAILED"     {% if selected_status == 'FAILED'     %}selected{% endif %}>Failed</option>
+        </select>
+      </div>
+      <div class="font-body-sm text-body-sm text-outline">
+        Showing {{ uploaded_files | length }} file{{ 's' if uploaded_files | length != 1 }}
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-background border-b border-outline-variant">
+            <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Filename</th>
+            <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Organization</th>
+            <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">Upload Date</th>
+            <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">Size</th>
+            <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Status</th>
+            <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody class="font-body-sm text-body-sm">
+          {% for f in uploaded_files %}
+          <tr class="table-row-hover border-b border-outline-variant/30 h-[48px] transition-colors
+                     {% if loop.index is even %}bg-surface{% endif %}">
+            <td class="px-md py-sm">
+              <div class="flex items-center gap-sm">
+                <span class="material-symbols-outlined text-outline text-[18px]">
+                  {% if f.file_extension in ['.xlsx', '.xls'] %}description
+                  {% else %}dataset{% endif %}
+                </span>
+                <span class="text-on-surface font-medium truncate max-w-[250px]">
+                  {{ f.original_filename }}
+                </span>
+              </div>
+            </td>
+            <td class="px-md py-sm text-on-surface-variant">
+              {% if f.organization %}
+                <a href="/organizations/{{ f.organization_id }}"
+                   class="hover:text-primary hover:underline transition-colors">
+                  {{ f.organization.name }}
+                </a>
+              {% else %}—{% endif %}
+            </td>
+            <td class="px-md py-sm text-right font-data-mono text-data-mono text-on-surface-variant">
+              {{ f.uploaded_at.strftime('%Y-%m-%d %H:%M') if f.uploaded_at else '—' }}
+            </td>
+            <td class="px-md py-sm text-right font-data-mono text-data-mono text-on-surface-variant">
+              {% if f.file_size %}
+                {% if f.file_size < 1048576 %}{{ (f.file_size / 1024)|round(1) }} KB
+                {% else %}{{ (f.file_size / 1048576)|round(1) }} MB{% endif %}
+              {% else %}—{% endif %}
+            </td>
+            <td class="px-md py-sm">
+              {% if f.upload_status.value == 'PROCESSED' %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#F0FDF4] text-[#166534]">Processed</span>
+              {% elif f.upload_status.value == 'PROCESSING' %}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-[#FFFBEB] text-[#92400E]">
+                  <span class="material-symbols-outlined text-[12px] animate-spin">sync</span>Processing
+                </span>
+              {% elif f.upload_status.value == 'FAILED' %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#FEF2F2] text-[#991B1B]">Failed</span>
+              {% else %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-surface-container-high text-on-surface-variant">Uploaded</span>
+              {% endif %}
+            </td>
+            <td class="px-md py-sm text-right">
+              <div class="flex items-center justify-end gap-sm">
+                <!-- Always show View Data if file was at least uploaded -->
+                <a href="/sheets-data/{{ f.id }}"
+                   class="text-primary font-label-md text-label-md hover:underline flex items-center gap-xs">
+                  <span class="material-symbols-outlined text-[14px]">table_chart</span>View Data
+                </a>
+                {% if f.upload_status.value == 'UPLOADED' %}
+                  <span class="text-outline-variant">·</span>
+                  <a href="/file-mapping-ui/{{ f.id }}"
+                     class="text-secondary font-label-md text-label-md hover:underline">Map</a>
+                {% elif f.upload_status.value == 'PROCESSED' %}
+                  <span class="text-outline-variant">·</span>
+                  <a href="/processing-result/{{ f.id }}"
+                     class="text-secondary font-label-md text-label-md hover:underline">Result</a>
+                {% elif f.upload_status.value == 'FAILED' %}
+                  <span class="text-outline-variant">·</span>
+                  <button onclick="retryProcess({{ f.id }}, this)"
+                          class="text-error font-label-md text-label-md hover:underline">Retry</button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="px-md py-xl text-center text-on-surface-variant font-body-sm text-body-sm">
+              No files found.
+              <a href="/upload" class="text-primary hover:underline ml-xs">Upload one →</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Apply filters via URL params
+  function applyFilters() {
+    const org    = document.getElementById('filter-org').value;
+    const status = document.getElementById('filter-status').value;
+    const params = new URLSearchParams();
+    if (org)    params.set('org_id', org);
+    if (status) params.set('status', status);
+    window.location.href = '/uploaded-files' + (params.toString() ? '?' + params.toString() : '');
+  }
+  document.getElementById('filter-org').addEventListener('change', applyFilters);
+  document.getElementById('filter-status').addEventListener('change', applyFilters);
+
+  // Retry processing (re-trigger transaction processing)
+  async function retryProcess(fileId, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Processing…';
+    try {
+      const resp = await fetch(`/transactions/process/${fileId}`, { method: 'POST' });
+      if (resp.ok) {
+        window.location.href = `/processing-result/${fileId}`;
+      } else {
+        const data = await resp.json();
+        alert(data.detail || 'Processing failed.');
+        btn.disabled = false;
+        btn.textContent = 'Retry';
+      }
+    } catch {
+      alert('Unable to connect to the server.');
+      btn.disabled = false;
+      btn.textContent = 'Retry';
+    }
+  }
+</script>
+{% endblock %}

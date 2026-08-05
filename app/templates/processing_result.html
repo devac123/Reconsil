@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Processing Complete – ReconSystem{% endblock %}
+
+{% block content %}
+<main class="max-w-[1440px] mx-auto px-margin pt-[48px] pb-xl flex flex-col items-center">
+
+  <!-- Success Card -->
+  <div class="bg-surface-container-lowest border border-outline-variant rounded-xl w-full max-w-[720px]
+              p-xl flex flex-col items-center text-center shadow-sm">
+
+    <!-- Success Icon -->
+    <div class="w-16 h-16 rounded-full bg-primary-fixed text-primary flex items-center justify-center
+                mb-md border-4 border-surface-container-lowest ring-1 ring-outline-variant shadow-sm">
+      <span class="material-symbols-outlined text-[32px]" style="font-variation-settings:'FILL' 1">check_circle</span>
+    </div>
+
+    <h1 class="font-display-sm text-display-sm text-on-surface mb-sm">Processing Complete</h1>
+    <p class="font-body-md text-body-md text-on-surface-variant mb-xl max-w-[480px]">
+      The uploaded file has been successfully ingested and all transactions have been generated.
+      They are now available for review.
+    </p>
+
+    <!-- Data Summary Bento Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-md w-full mb-xl">
+
+      <div class="bg-surface border border-outline-variant rounded-lg p-md text-left flex flex-col
+                  hover:bg-surface-container-low transition-colors">
+        <span class="font-label-md text-label-md text-on-surface-variant mb-xs">Organization</span>
+        <span class="font-headline-sm text-headline-sm text-on-surface truncate">
+          {{ uploaded_file.organization.name if uploaded_file.organization else '—' }}
+        </span>
+      </div>
+
+      <div class="bg-surface border border-outline-variant rounded-lg p-md text-left flex flex-col
+                  hover:bg-surface-container-low transition-colors">
+        <span class="font-label-md text-label-md text-on-surface-variant mb-xs">Uploaded File ID</span>
+        <span class="font-data-mono text-data-mono text-on-surface text-[15px]">
+          FILE-{{ uploaded_file.id }}
+        </span>
+      </div>
+
+      <div class="bg-surface border border-outline-variant rounded-lg p-md text-left flex flex-col
+                  hover:bg-surface-container-low transition-colors">
+        <span class="font-label-md text-label-md text-on-surface-variant mb-xs">Transactions Created</span>
+        <div class="flex items-baseline gap-2">
+          <span class="font-data-mono text-data-mono text-primary text-[18px] font-semibold">
+            {{ total_processed | default(0) | int }}
+          </span>
+          <span class="material-symbols-outlined text-primary text-[16px]">receipt_long</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- File Details Row -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-md w-full mb-xl">
+      <div class="bg-surface border border-outline-variant rounded-lg p-md text-left">
+        <span class="font-label-md text-label-md text-on-surface-variant block mb-xs">Filename</span>
+        <span class="font-body-sm text-body-sm text-on-surface truncate block">
+          {{ uploaded_file.original_filename }}
+        </span>
+      </div>
+      <div class="bg-surface border border-outline-variant rounded-lg p-md text-left">
+        <span class="font-label-md text-label-md text-on-surface-variant block mb-xs">Upload Status</span>
+        <span class="inline-flex items-center px-2 py-1 rounded bg-[#F0FDF4] text-[#166534]
+                     font-label-md text-[11px] uppercase tracking-wider">
+          <span class="material-symbols-outlined text-[14px] mr-1">check_circle</span>
+          {{ uploaded_file.upload_status.value | title }}
+        </span>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex flex-col sm:flex-row gap-md w-full justify-center">
+      <a href="/organizations/{{ uploaded_file.organization_id }}"
+         class="bg-primary text-on-primary font-label-md text-label-md px-lg py-[10px] rounded-lg
+                hover:bg-on-primary-fixed-variant transition-colors
+                flex items-center justify-center gap-xs">
+        Return to Organization
+        <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+      </a>
+      <a href="/uploaded-files"
+         class="bg-surface-container-lowest text-on-surface font-label-md text-label-md px-lg py-[10px]
+                rounded-lg border border-outline-variant hover:bg-surface-container transition-colors
+                flex items-center justify-center">
+        View All Files
+      </a>
+      <a href="/upload"
+         class="bg-surface-container-lowest text-on-surface font-label-md text-label-md px-lg py-[10px]
+                rounded-lg border border-outline-variant hover:bg-surface-container transition-colors
+                flex items-center justify-center gap-xs">
+        <span class="material-symbols-outlined text-[18px]">upload</span>
+        Upload Another
+      </a>
+    </div>
+  </div>
+
+</main>
+{% endblock %}

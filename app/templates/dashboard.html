@@ -1,12 +1,223 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Dashboard</title>
-</head>
-<body>
+{% extends "base.html" %}
 
-<h1>Reconciliation System</h1>
+{% block title %}Dashboard – ReconSystem{% endblock %}
 
-<a href="/organizations">Organizations</a>
-</body>
-</html>
+{% block content %}
+<main class="max-w-[1440px] mx-auto px-margin py-lg flex flex-col gap-lg">
+
+  <!-- Page Header -->
+  <header class="flex flex-col md:flex-row md:items-end justify-between gap-md">
+    <div>
+      <h1 class="font-display-sm text-display-sm text-on-surface mb-xs">System Overview</h1>
+      <p class="font-body-sm text-body-sm text-on-surface-variant">
+        Real-time metrics for reconciliation operations.
+      </p>
+    </div>
+  </header>
+
+  <!-- Bento Metrics Grid -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-md">
+
+    <!-- Total Organizations -->
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col gap-sm
+                hover:bg-surface-container-low transition-colors">
+      <div class="flex justify-between items-start">
+        <span class="font-label-md text-label-md text-on-surface-variant uppercase">Total Organizations</span>
+        <span class="material-symbols-outlined text-outline-variant">domain</span>
+      </div>
+      <div class="font-display-sm text-display-sm text-on-surface font-data-mono" id="stat-orgs">
+        {{ stats.total_organizations if stats else '—' }}
+      </div>
+      <a href="/organizations" class="font-body-sm text-body-sm text-primary flex items-center gap-xs hover:underline">
+        View all <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+      </a>
+    </div>
+
+    <!-- Files Uploaded -->
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col gap-sm
+                hover:bg-surface-container-low transition-colors">
+      <div class="flex justify-between items-start">
+        <span class="font-label-md text-label-md text-on-surface-variant uppercase">Files Uploaded</span>
+        <span class="material-symbols-outlined text-outline-variant">upload_file</span>
+      </div>
+      <div class="font-display-sm text-display-sm text-on-surface font-data-mono" id="stat-files">
+        {{ stats.total_files if stats else '—' }}
+      </div>
+      <a href="/uploaded-files" class="font-body-sm text-body-sm text-primary flex items-center gap-xs hover:underline">
+        View all <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+      </a>
+    </div>
+
+    <!-- Processing -->
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col gap-sm
+                hover:bg-surface-container-low transition-colors">
+      <div class="flex justify-between items-start">
+        <span class="font-label-md text-label-md text-on-surface-variant uppercase">Processing</span>
+        <span class="material-symbols-outlined text-outline-variant">autorenew</span>
+      </div>
+      <div class="font-display-sm text-display-sm text-on-surface font-data-mono">
+        {{ stats.processing_files if stats else '—' }}
+      </div>
+      <div class="flex items-center gap-xs font-body-sm text-body-sm">
+        <span class="w-[8px] h-[8px] rounded-full bg-[#92400E]"></span>
+        <span class="text-on-surface-variant">Active pipelines</span>
+      </div>
+    </div>
+
+    <!-- Failed -->
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col gap-sm
+                hover:bg-surface-container-low transition-colors">
+      <div class="flex justify-between items-start">
+        <span class="font-label-md text-label-md text-on-surface-variant uppercase">Failed</span>
+        <span class="material-symbols-outlined text-error">error</span>
+      </div>
+      <div class="font-display-sm text-display-sm text-on-surface font-data-mono">
+        {{ stats.failed_files if stats else '—' }}
+      </div>
+      <a href="/uploaded-files?status=FAILED"
+         class="font-body-sm text-body-sm text-error flex items-center gap-xs hover:underline">
+        Review <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Middle Row: Files by Status + Quick Actions -->
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-md">
+
+    <!-- Files by Status (3 cols) -->
+    <div class="md:col-span-3 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col">
+      <div class="flex justify-between items-center mb-md border-b border-outline-variant pb-sm">
+        <h2 class="font-headline-sm text-headline-sm text-on-surface">Files by Status</h2>
+        <a href="/uploaded-files"
+           class="font-label-md text-label-md text-primary flex items-center gap-xs hover:underline">
+          View Details <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+        </a>
+      </div>
+
+      <div class="flex-1 flex flex-col justify-center gap-lg">
+        {% set file_statuses = [
+          ('UPLOADED',   'cloud_done',   'text-on-surface-variant', '#737686',  stats.uploaded_files   if stats else 0),
+          ('PROCESSING', 'sync',         'text-[#92400E]',          '#92400E',  stats.processing_files if stats else 0),
+          ('PROCESSED',  'check_circle', 'text-[#166534]',          '#166534',  stats.processed_files  if stats else 0),
+          ('FAILED',     'error',        'text-[#991B1B]',          '#991B1B',  stats.failed_files     if stats else 0),
+        ] %}
+        {% set total_files = (stats.total_files if stats else 1) or 1 %}
+        {% for label, icon, color_cls, bar_color, count in file_statuses %}
+        <div class="flex items-center gap-md">
+          <div class="w-[130px] font-label-md text-label-md {{ color_cls }} flex items-center gap-xs">
+            <span class="material-symbols-outlined text-[16px]">{{ icon }}</span>
+            {{ label | title }}
+          </div>
+          <div class="flex-1 h-[8px] bg-surface-container-high rounded-full overflow-hidden">
+            <div class="h-full rounded-full"
+                 style="background:{{ bar_color }}; width:{{ [(count / total_files * 100)|round|int, 2]|max }}%"></div>
+          </div>
+          <div class="w-[48px] text-right font-data-mono text-body-sm text-on-surface">
+            {{ count }}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Quick Actions (1 col) -->
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col">
+      <h2 class="font-headline-sm text-headline-sm text-on-surface mb-md pb-sm border-b border-outline-variant">
+        Quick Actions
+      </h2>
+      <div class="flex flex-col gap-sm">
+        <a href="/upload"
+           class="w-full flex items-center justify-center gap-sm bg-primary text-on-primary
+                  font-label-md text-label-md h-[40px] rounded-lg
+                  hover:bg-on-primary-fixed-variant transition-colors">
+          <span class="material-symbols-outlined text-[18px]">upload</span>
+          Upload a File
+        </a>
+        <a href="/organizations"
+           class="w-full flex items-center justify-start gap-sm bg-surface-container-lowest
+                  border border-outline-variant text-on-surface font-label-md text-label-md
+                  h-[40px] px-md rounded-lg hover:bg-surface-container-low transition-colors mt-sm">
+          <span class="material-symbols-outlined text-[18px] text-on-surface-variant">domain</span>
+          View Organizations
+        </a>
+        <a href="/uploaded-files"
+           class="w-full flex items-center justify-start gap-sm bg-surface-container-lowest
+                  border border-outline-variant text-on-surface font-label-md text-label-md
+                  h-[40px] px-md rounded-lg hover:bg-surface-container-low transition-colors">
+          <span class="material-symbols-outlined text-[18px] text-on-surface-variant">folder_open</span>
+          View Uploaded Files
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Uploads Table -->
+  <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm">
+    <div class="flex justify-between items-center px-md py-sm border-b border-outline-variant bg-surface">
+      <h2 class="font-headline-sm text-headline-sm text-on-surface">Recent Uploads</h2>
+      <a href="/uploaded-files" class="font-label-md text-label-md text-primary hover:underline flex items-center gap-xs">
+        See all <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+      </a>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead class="bg-surface border-b border-outline-variant">
+          <tr>
+            <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Filename</th>
+            <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Organization</th>
+            <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">Uploaded</th>
+            <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Status</th>
+            <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody class="font-body-sm text-body-sm">
+          {% for f in recent_files %}
+          <tr class="border-b border-outline-variant/50 hover:bg-surface-container transition-colors h-[48px]">
+            <td class="px-md py-sm text-on-surface font-medium flex items-center gap-sm">
+              <span class="material-symbols-outlined text-outline text-[18px]">description</span>
+              {{ f.original_filename }}
+            </td>
+            <td class="px-md py-sm text-on-surface-variant">{{ f.organization.name if f.organization else '—' }}</td>
+            <td class="px-md py-sm text-right font-data-mono text-data-mono text-on-surface-variant">
+              {{ f.uploaded_at.strftime('%Y-%m-%d %H:%M') if f.uploaded_at else '—' }}
+            </td>
+            <td class="px-md py-sm">
+              {% if f.upload_status.value == 'PROCESSED' %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#F0FDF4] text-[#166534]">Processed</span>
+              {% elif f.upload_status.value == 'PROCESSING' %}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-[#FFFBEB] text-[#92400E]">
+                  <span class="material-symbols-outlined text-[12px] animate-spin">sync</span>Processing
+                </span>
+              {% elif f.upload_status.value == 'FAILED' %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#FEF2F2] text-[#991B1B]">Failed</span>
+              {% else %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-surface-container-high text-on-surface-variant">Uploaded</span>
+              {% endif %}
+            </td>
+            <td class="px-md py-sm text-right">
+              {% if f.upload_status.value == 'UPLOADED' %}
+                <a href="/file-mapping-ui/{{ f.id }}"
+                   class="text-primary-container font-label-md text-label-md hover:underline">Map</a>
+              {% elif f.upload_status.value == 'PROCESSED' %}
+                <a href="/organizations/{{ f.organization_id }}"
+                   class="text-secondary font-label-md text-label-md hover:underline">View</a>
+              {% else %}
+                <span class="text-outline font-label-md text-label-md opacity-50">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+              No uploaded files yet.
+              <a href="/upload" class="text-primary hover:underline ml-xs">Upload one now →</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+{% endblock %}

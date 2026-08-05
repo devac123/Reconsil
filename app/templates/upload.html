@@ -1,252 +1,244 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reconciliation System — Upload</title>
-    <style>
-        :root {
-            --border: #d7dbe0;
-            --text: #1f2328;
-            --muted: #6b7280;
-            --primary: #2563eb;
-            --primary-hover: #1d4ed8;
-            --success-bg: #ecfdf3;
-            --success-text: #027a48;
-            --error-bg: #fef3f2;
-            --error-text: #b42318;
-        }
+{% extends "base.html" %}
 
-        * { box-sizing: border-box; }
+{% block title %}Upload – ReconSystem{% endblock %}
 
-        body {
-            margin: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: #f7f8fa;
-            color: var(--text);
-        }
+{% block extra_styles %}
+input[type="file"]::file-selector-button { display: none; }
+.upload-zone { transition: all 0.2s ease-in-out; }
+.upload-zone.dragover { border-color: #2563EB; background-color: #eff6ff; }
+{% endblock %}
 
-        header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 16px 32px;
-            background: #fff;
-            border-bottom: 1px solid var(--border);
-        }
+{% block content %}
+<main class="max-w-[1440px] mx-auto px-margin py-xl flex flex-col items-center">
 
-        header h1 {
-            font-size: 18px;
-            margin: 0;
-        }
+  <!-- Page Header -->
+  <header class="w-full max-w-2xl mb-lg text-center">
+    <h1 class="font-headline-md text-headline-md text-on-surface mb-xs">Data Ingestion</h1>
+    <p class="font-body-md text-body-md text-on-surface-variant">
+      Upload your reconciliation files (.xlsx, .xls) for automated processing.
+    </p>
+  </header>
 
-        header nav a {
-            margin-left: 20px;
-            color: var(--muted);
-            text-decoration: none;
-            font-size: 14px;
-        }
+  <!-- Upload Panel -->
+  <div class="w-full max-w-2xl bg-surface-container-lowest border border-outline-variant rounded-lg p-lg shadow-sm">
 
-        header nav a:hover {
-            color: var(--text);
-        }
+    <!-- Drag & Drop Zone -->
+    <div id="drop-zone"
+         class="upload-zone border-2 border-dashed border-outline-variant rounded-lg p-xl
+                flex flex-col items-center justify-center text-center cursor-pointer
+                bg-surface hover:bg-surface-container transition-colors relative min-h-[240px]">
+      <input id="file-upload" type="file" accept=".xlsx,.xls"
+             class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+             aria-label="File upload input"/>
+      <span class="material-symbols-outlined text-outline text-[48px] mb-md"
+            style="font-variation-settings:'FILL' 1">upload_file</span>
+      <p class="font-headline-sm text-headline-sm text-on-surface mb-xs">
+        Select a file or drag and drop here
+      </p>
+      <p class="font-body-sm text-body-sm text-outline mb-lg">Excel files only (.xlsx, .xls) · max 50 MB</p>
+      <button type="button"
+              class="bg-primary text-on-primary font-label-md text-label-md px-lg py-[10px]
+                     rounded hover:bg-on-primary-fixed-variant transition-colors
+                     relative z-20 pointer-events-none">
+        Browse Files
+      </button>
+    </div>
 
-        main {
-            max-width: 480px;
-            margin: 64px auto;
-            padding: 32px;
-            background: #fff;
-            border: 1px solid var(--border);
-            border-radius: 10px;
-        }
+    <!-- Selected File State (hidden until file chosen) -->
+    <div id="selected-file-state"
+         class="hidden mt-lg p-md border border-outline-variant rounded bg-surface flex items-center justify-between">
+      <div class="flex items-center gap-md">
+        <span class="material-symbols-outlined text-primary">description</span>
+        <div>
+          <p id="filename-display"
+             class="font-label-md text-label-md text-on-surface truncate max-w-[300px]"></p>
+          <p id="filesize-display"
+             class="font-body-sm text-body-sm text-outline text-[12px]"></p>
+        </div>
+      </div>
+      <button id="remove-file-btn"
+              class="p-sm text-outline hover:text-error transition-colors rounded-full hover:bg-error-container/20">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
 
-        main h2 {
-            margin-top: 0;
-            font-size: 20px;
-        }
+    <!-- Upload Action -->
+    <div class="mt-lg flex justify-end">
+      <button id="start-upload-btn" disabled
+              class="bg-primary text-on-primary font-label-md text-label-md px-xl h-[36px] rounded
+                     hover:bg-on-primary-fixed-variant transition-colors
+                     disabled:bg-surface-variant disabled:text-outline-variant disabled:cursor-not-allowed">
+        Start Upload
+      </button>
+    </div>
+  </div>
 
-        main p.subtitle {
-            color: var(--muted);
-            font-size: 14px;
-            margin-top: -8px;
-        }
+  <!-- Result Area (shown after upload) -->
+  <div id="result-area" class="w-full max-w-2xl mt-xl hidden">
+    <!-- Success -->
+    <div id="result-success"
+         class="hidden bg-surface-container-lowest border border-outline-variant rounded-lg p-lg">
+      <div class="flex items-center gap-sm mb-md">
+        <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#F0FDF4] text-[#166534]">
+          <span class="material-symbols-outlined text-[16px]">check</span>
+        </span>
+        <h3 class="font-headline-sm text-headline-sm text-on-surface">Upload Successful</h3>
+      </div>
+      <div class="grid grid-cols-2 gap-md mt-sm mb-lg">
+        <div>
+          <p class="font-label-md text-label-md text-outline uppercase text-[10px]">Organization</p>
+          <p id="res-org" class="font-body-md text-body-md text-on-surface font-medium">—</p>
+        </div>
+        <div>
+          <p class="font-label-md text-label-md text-outline uppercase text-[10px]">File ID</p>
+          <p id="res-file-id" class="font-data-mono text-data-mono text-on-surface">—</p>
+        </div>
+        <div>
+          <p class="font-label-md text-label-md text-outline uppercase text-[10px]">Total Sheets</p>
+          <p id="res-sheets" class="font-data-mono text-data-mono text-xl text-on-surface">—</p>
+        </div>
+        <div>
+          <p class="font-label-md text-label-md text-outline uppercase text-[10px]">Rows Imported</p>
+          <p id="res-rows" class="font-data-mono text-data-mono text-xl text-on-surface">—</p>
+        </div>
+      </div>
+      <div class="flex gap-sm">
+        <a id="res-mapping-link" href="#"
+           class="bg-primary text-on-primary font-label-md text-label-md px-lg py-[10px] rounded
+                  hover:bg-on-primary-fixed-variant transition-colors flex items-center gap-xs">
+          Map Columns
+          <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+        </a>
+        <a href="/uploaded-files"
+           class="bg-surface-container-lowest text-on-surface border border-outline-variant
+                  font-label-md text-label-md px-lg py-[10px] rounded
+                  hover:bg-surface-container transition-colors">
+          View All Files
+        </a>
+      </div>
+    </div>
 
-        label {
-            display: block;
-            font-size: 14px;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
+    <!-- Error -->
+    <div id="result-error"
+         class="hidden bg-[#FEF2F2] border border-[#FCA5A5] rounded-lg p-md flex flex-col">
+      <div class="flex items-start gap-sm mb-sm">
+        <span class="material-symbols-outlined text-[#991B1B] mt-[2px]">error</span>
+        <div>
+          <h3 class="font-label-md text-label-md text-[#991B1B]">Upload Failed</h3>
+          <p id="error-message"
+             class="font-body-sm text-body-sm text-[#7F1D1D] mt-xs text-[12px] leading-tight"></p>
+        </div>
+      </div>
+    </div>
+  </div>
 
-        input[type="file"] {
-            width: 100%;
-            padding: 10px;
-            border: 1px dashed var(--border);
-            border-radius: 6px;
-            font-size: 14px;
-            background: #fafafa;
-        }
+</main>
+{% endblock %}
 
-        button {
-            margin-top: 20px;
-            width: 100%;
-            padding: 10px 16px;
-            background: var(--primary);
-            color: #fff;
-            border: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-        }
-
-        button:hover:not(:disabled) {
-            background: var(--primary-hover);
-        }
-
-        button:disabled {
-            background: #9db6ee;
-            cursor: not-allowed;
-        }
-
-        #status {
-            margin-top: 16px;
-            padding: 12px 14px;
-            border-radius: 6px;
-            font-size: 14px;
-            display: none;
-        }
-
-        #status.success {
-            display: block;
-            background: var(--success-bg);
-            color: var(--success-text);
-        }
-
-        #status.error {
-            display: block;
-            background: var(--error-bg);
-            color: var(--error-text);
-        }
-
-        #status dl {
-            margin: 8px 0 0;
-            display: grid;
-            grid-template-columns: auto 1fr;
-            gap: 4px 12px;
-            font-size: 13px;
-        }
-
-        #status dt { color: var(--muted); }
-        #status dd { margin: 0; font-weight: 600; }
-    </style>
-</head>
-<body>
-
-    <header>
-        <h1>Reconciliation System</h1>
-        <nav>
-            <a href="/">Upload</a>
-            <a href="/dashboard">Dashboard</a>
-        </nav>
-    </header>
-
-    <main>
-        <h2>Upload Excel File</h2>
-        <p class="subtitle">Upload a workbook to import its rows into staging for reconciliation.</p>
-
-        <form id="uploadForm">
-            <label for="file">Select Excel File</label>
-            <input
-                type="file"
-                id="file"
-                name="file"
-                accept=".xlsx,.xls"
-                required
-            >
-            <button type="submit" id="submitBtn">Upload</button>
-        </form>
-
-        <div id="status"></div>
-    </main>
-
+{% block scripts %}
 <script>
+  const dropZone      = document.getElementById('drop-zone');
+  const fileInput     = document.getElementById('file-upload');
+  const selectedState = document.getElementById('selected-file-state');
+  const filenameDisp  = document.getElementById('filename-display');
+  const filesizeDisp  = document.getElementById('filesize-display');
+  const removeBtn     = document.getElementById('remove-file-btn');
+  const startBtn      = document.getElementById('start-upload-btn');
+  const resultArea    = document.getElementById('result-area');
+  const resultSuccess = document.getElementById('result-success');
+  const resultError   = document.getElementById('result-error');
 
-const form = document.getElementById("uploadForm");
-const submitBtn = document.getElementById("submitBtn");
-const statusBox = document.getElementById("status");
+  let selectedFile = null;
 
-function showStatus(kind, html) {
-    statusBox.className = kind;
-    statusBox.innerHTML = html;
-}
+  // ── Drag & Drop ──────────────────────────────────────────────────────────
+  ['dragenter','dragover','dragleave','drop'].forEach(ev =>
+    dropZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); })
+  );
+  ['dragenter','dragover'].forEach(ev =>
+    dropZone.addEventListener(ev, () => dropZone.classList.add('dragover'))
+  );
+  ['dragleave','drop'].forEach(ev =>
+    dropZone.addEventListener(ev, () => dropZone.classList.remove('dragover'))
+  );
+  dropZone.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
+  fileInput.addEventListener('change', function() { handleFiles(this.files); });
 
-function clearStatus() {
-    statusBox.className = "";
-    statusBox.innerHTML = "";
-}
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
 
-form.addEventListener("submit", async (event) => {
-
-    event.preventDefault();
-    clearStatus();
-
-    const fileInput = document.getElementById("file");
-
-    if (fileInput.files.length === 0) {
-        showStatus("error", "Please select a file.");
-        return;
+  function handleFiles(files) {
+    if (!files.length) return;
+    const file = files[0];
+    const ext  = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    if (!['.xlsx', '.xls'].includes(ext)) {
+      alert('Please select a valid Excel file (.xlsx or .xls)');
+      fileInput.value = '';
+      return;
     }
+    selectedFile = file;
+    filenameDisp.textContent = file.name;
+    filesizeDisp.textContent = formatBytes(file.size);
+    selectedState.classList.remove('hidden');
+    startBtn.disabled = false;
+    dropZone.style.display = 'none';
+    resultArea.classList.add('hidden');
+    resultSuccess.classList.add('hidden');
+    resultError.classList.add('hidden');
+  }
+
+  removeBtn.addEventListener('click', () => {
+    fileInput.value = '';
+    selectedFile = null;
+    selectedState.classList.add('hidden');
+    startBtn.disabled = true;
+    dropZone.style.display = '';
+  });
+
+  // ── Upload ───────────────────────────────────────────────────────────────
+  startBtn.addEventListener('click', async () => {
+    if (!selectedFile) return;
+
+    startBtn.disabled = true;
+    startBtn.textContent = 'Uploading…';
 
     const formData = new FormData();
-    formData.append("file", fileInput.files[0]);
-
-    submitBtn.disabled = true;
-    submitBtn.textContent = "Uploading…";
+    formData.append('file', selectedFile);
 
     try {
+      const resp   = await fetch('/files/upload', { method: 'POST', body: formData });
+      const result = await resp.json();
 
-        const response = await fetch("/files/upload", {
-            method: "POST",
-            body: formData,
-        });
+      resultArea.classList.remove('hidden');
 
-        const result = await response.json();
-
-        if (response.ok) {
-
-            showStatus("success", `
-                <strong>Upload successful.</strong>
-                <dl>
-                    <dt>Organization</dt><dd>${result.organization}</dd>
-                    <dt>Sheets imported</dt><dd>${result.total_sheets}</dd>
-                    <dt>Rows imported</dt><dd>${result.total_rows_imported}</dd>
-                    <dt>Status</dt><dd>${result.status}</dd>
-                </dl>
-            `);
-            form.reset();
-
-        } else {
-
-            showStatus("error", result.detail || "Upload failed.");
-
-        }
-
-    } catch (error) {
-
-        console.error(error);
-        showStatus("error", "Unable to connect to the server.");
-
+      if (resp.ok) {
+        document.getElementById('res-org').textContent     = result.organization;
+        document.getElementById('res-file-id').textContent = result.uploaded_file_id;
+        document.getElementById('res-sheets').textContent  = result.total_sheets;
+        document.getElementById('res-rows').textContent    = result.total_rows_imported.toLocaleString();
+        document.getElementById('res-mapping-link').href   =
+            `/file-mapping-ui/${result.uploaded_file_id}`;
+        resultSuccess.classList.remove('hidden');
+        resultError.classList.add('hidden');
+      } else {
+        document.getElementById('error-message').textContent =
+            result.detail || 'An unknown error occurred.';
+        resultError.classList.remove('hidden');
+        resultSuccess.classList.add('hidden');
+        startBtn.disabled = false;
+      }
+    } catch (err) {
+      resultArea.classList.remove('hidden');
+      document.getElementById('error-message').textContent =
+          'Unable to connect to the server.';
+      resultError.classList.remove('hidden');
+      resultSuccess.classList.add('hidden');
+      startBtn.disabled = false;
     } finally {
-
-        submitBtn.disabled = false;
-        submitBtn.textContent = "Upload";
-
+      startBtn.textContent = 'Start Upload';
     }
-
-});
-
+  });
 </script>
-
-</body>
-</html>
+{% endblock %}

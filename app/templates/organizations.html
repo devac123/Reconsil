@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+
+{% block title %}Organizations – ReconSystem{% endblock %}
+
+{% block content %}
+<main class="max-w-[1440px] mx-auto px-margin py-lg flex flex-col gap-lg">
+
+  <!-- Page Header -->
+  <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-md">
+    <div>
+      <h1 class="font-headline-md text-headline-md text-on-surface">Organizations</h1>
+      <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">
+        Manage partner organizations and operating entities.
+      </p>
+    </div>
+    <button onclick="document.getElementById('create-modal').classList.remove('hidden')"
+            class="h-[36px] px-md bg-primary-container text-on-primary font-label-md text-label-md
+                   rounded flex items-center gap-xs hover:opacity-90 transition-opacity">
+      <span class="material-symbols-outlined text-[18px]">add</span>
+      Add Organization
+    </button>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="flex flex-col sm:flex-row gap-sm items-center bg-surface p-sm rounded border border-outline-variant">
+    <div class="relative w-full sm:w-[320px]">
+      <span class="material-symbols-outlined absolute left-sm top-1/2 -translate-y-1/2 text-outline text-[18px]">search</span>
+      <input id="org-search"
+             class="w-full h-[36px] pl-xl pr-sm rounded border border-outline-variant
+                    bg-surface-container-lowest text-body-sm
+                    focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
+             placeholder="Search by name or code…" type="text"/>
+    </div>
+  </div>
+
+  <!-- Data Table -->
+  <div class="bg-surface border border-outline-variant rounded overflow-hidden shadow-sm">
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse min-w-[700px]">
+        <thead>
+          <tr class="bg-surface-bright border-b border-outline-variant font-label-md text-label-md uppercase text-on-surface-variant">
+            <th class="px-md py-sm font-semibold w-[80px]">ID</th>
+            <th class="px-md py-sm font-semibold">Name</th>
+            <th class="px-md py-sm font-semibold w-[120px]">Code</th>
+            <th class="px-md py-sm font-semibold">Description</th>
+            <th class="px-md py-sm font-semibold w-[110px]">Status</th>
+            <th class="px-md py-sm font-semibold w-[140px] text-right">Created</th>
+            <th class="px-md py-sm font-semibold w-[80px] text-center">Files</th>
+          </tr>
+        </thead>
+        <tbody class="font-body-sm text-body-sm text-on-surface" id="org-table-body">
+          {% for org in organizations %}
+          <tr class="org-row min-h-[48px] h-[48px] border-b border-outline-variant/50
+                     hover:bg-surface-container cursor-pointer transition-colors group"
+              onclick="window.location='/organizations/{{ org.id }}'">
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface-variant">
+              ORG-{{ org.id }}
+            </td>
+            <td class="px-md py-sm font-medium group-hover:text-primary transition-colors">
+              {{ org.name }}
+            </td>
+            <td class="px-md py-sm font-data-mono text-data-mono">{{ org.code }}</td>
+            <td class="px-md py-sm text-on-surface-variant truncate max-w-[200px]">
+              {{ org.description or '—' }}
+            </td>
+            <td class="px-md py-sm">
+              {% if org.is_active %}
+                <span class="inline-flex items-center px-2 py-1 rounded bg-[#F0FDF4] text-[#166534]
+                             font-label-md text-[11px] uppercase tracking-wider">Active</span>
+              {% else %}
+                <span class="inline-flex items-center px-2 py-1 rounded bg-surface-variant text-on-surface-variant
+                             font-label-md text-[11px] uppercase tracking-wider">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-right text-on-surface-variant">
+              {{ org.created_at.strftime('%Y-%m-%d') if org.created_at else '—' }}
+            </td>
+            <td class="px-md py-sm text-center">
+              <a href="/uploaded-files?org_id={{ org.id }}"
+                 onclick="event.stopPropagation()"
+                 class="text-primary hover:underline font-label-md text-label-md">
+                Files
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="7" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+              No organizations found.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination Info -->
+    <div class="px-md py-sm border-t border-outline-variant bg-surface flex items-center justify-between">
+      <span class="font-body-sm text-body-sm text-on-surface-variant">
+        Showing {{ organizations | length }} organization{{ 's' if organizations | length != 1 }}
+      </span>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── Create Organization Modal ─────────────────────────────────────────── -->
+<div id="create-modal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+  <div class="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-xl w-full max-w-md mx-margin p-lg">
+    <div class="flex justify-between items-center mb-md">
+      <h2 class="font-headline-sm text-headline-sm text-on-surface">New Organization</h2>
+      <button onclick="document.getElementById('create-modal').classList.add('hidden')"
+              class="text-on-surface-variant hover:text-on-surface">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+
+    <form id="create-org-form" class="flex flex-col gap-md">
+      <div>
+        <label class="font-label-md text-label-md text-on-surface-variant block mb-xs">
+          Organization Name <span class="text-error">*</span>
+        </label>
+        <input name="name" required
+               class="w-full h-[36px] px-sm border border-outline-variant rounded
+                      bg-surface text-body-sm text-on-surface
+                      focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
+               placeholder="e.g. Acme Financial"/>
+      </div>
+      <div>
+        <label class="font-label-md text-label-md text-on-surface-variant block mb-xs">
+          Code <span class="text-error">*</span>
+        </label>
+        <input name="code" required maxlength="50"
+               class="w-full h-[36px] px-sm border border-outline-variant rounded
+                      bg-surface text-body-sm text-on-surface font-data-mono
+                      focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
+               placeholder="e.g. ACME-FIN"/>
+      </div>
+      <div>
+        <label class="font-label-md text-label-md text-on-surface-variant block mb-xs">Description</label>
+        <textarea name="description" rows="2"
+                  class="w-full px-sm py-sm border border-outline-variant rounded
+                         bg-surface text-body-sm text-on-surface
+                         focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none resize-none"
+                  placeholder="Optional description…"></textarea>
+      </div>
+
+      <div id="create-org-error" class="hidden text-error font-body-sm text-body-sm"></div>
+
+      <div class="flex justify-end gap-sm mt-sm">
+        <button type="button"
+                onclick="document.getElementById('create-modal').classList.add('hidden')"
+                class="h-[36px] px-md border border-outline-variant rounded text-on-surface
+                       font-label-md text-label-md hover:bg-surface-container transition-colors">
+          Cancel
+        </button>
+        <button type="submit"
+                class="h-[36px] px-md bg-primary-container text-on-primary rounded
+                       font-label-md text-label-md hover:opacity-90 transition-opacity">
+          Create
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // ── Live search filter ────────────────────────────────────────────────────
+  document.getElementById('org-search').addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    document.querySelectorAll('#org-table-body .org-row').forEach(row => {
+      row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  });
+
+  // ── Create Organization ───────────────────────────────────────────────────
+  document.getElementById('create-org-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const errorEl = document.getElementById('create-org-error');
+    errorEl.classList.add('hidden');
+
+    const formData = new FormData(this);
+    const payload = {
+      name:        formData.get('name').trim(),
+      code:        formData.get('code').trim().toUpperCase(),
+      description: formData.get('description').trim() || null,
+      is_active:   true,
+    };
+
+    try {
+      const resp = await fetch('/api/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (resp.ok) {
+        window.location.reload();
+      } else {
+        const data = await resp.json();
+        errorEl.textContent = data.detail || 'Failed to create organization.';
+        errorEl.classList.remove('hidden');
+      }
+    } catch {
+      errorEl.textContent = 'Unable to connect to the server.';
+      errorEl.classList.remove('hidden');
+    }
+  });
+</script>
+{% endblock %}

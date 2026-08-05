@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+
+{% block title %}Column Mapping – {{ uploaded_file.original_filename }} – ReconSystem{% endblock %}
+
+{% block extra_styles %}
+body { background-color: #f8f9fa; }
+{% endblock %}
+
+{% block content %}
+<main class="max-w-[1440px] mx-auto px-margin pt-lg pb-xl min-h-screen">
+
+  <!-- Header Section -->
+  <div class="flex flex-col md:flex-row md:items-end justify-between gap-md mb-lg">
+    <div>
+      <!-- Breadcrumbs -->
+      <div class="flex items-center gap-sm mb-xs">
+        <a href="/organizations/{{ uploaded_file.organization_id }}"
+           class="font-label-md text-label-md text-on-surface-variant uppercase hover:text-primary">
+          {{ uploaded_file.organization.name if uploaded_file.organization else 'Organization' }}
+        </a>
+        <span class="text-outline-variant material-symbols-outlined text-[16px]">chevron_right</span>
+        <span class="font-label-md text-label-md text-on-surface-variant uppercase truncate max-w-[200px]">
+          {{ uploaded_file.original_filename }}
+        </span>
+      </div>
+      <h1 class="font-headline-md text-headline-md text-on-surface">Column Mapping</h1>
+      <p class="font-body-sm text-body-sm text-on-surface-variant mt-xs">
+        Map the extracted columns from your file to the standard reconciliation fields.
+      </p>
+    </div>
+
+    <!-- Sheet Tabs + Save Button -->
+    <div class="flex items-center gap-md flex-wrap">
+      {% if sheets %}
+      <div class="flex bg-surface-container-lowest border border-outline-variant rounded p-xs" id="sheet-tabs">
+        {% for sheet in sheets %}
+        <button onclick="selectSheet('{{ sheet.sheet_name }}', this)"
+                data-sheet="{{ sheet.sheet_name }}"
+                class="sheet-tab px-md py-xs font-label-md text-label-md text-on-surface-variant
+                       hover:bg-surface-container-low rounded-sm transition-colors
+                       {% if loop.first %}bg-secondary-container text-on-secondary-container{% endif %}">
+          {{ sheet.sheet_name }}
+        </button>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <button id="save-mapping-btn"
+              onclick="saveMappings()"
+              class="h-[36px] px-md bg-primary-container text-on-primary font-label-md text-label-md
+                     rounded flex items-center gap-xs hover:bg-primary transition-colors">
+        <span class="material-symbols-outlined text-[18px]">save</span>
+        Save Mapping
+      </button>
+    </div>
+  </div>
+
+  <!-- Active Sheet Info -->
+  <p id="active-sheet-info" class="font-body-sm text-body-sm text-on-surface-variant mb-md"></p>
+
+  <!-- Mapping Interface -->
+  <div class="bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden">
+
+    <!-- Table Header -->
+    <div class="grid grid-cols-1 md:grid-cols-2 bg-surface border-b border-outline-variant">
+      <div class="px-md py-sm flex items-center gap-sm border-b md:border-b-0 md:border-r border-outline-variant">
+        <span class="material-symbols-outlined text-on-surface-variant text-[20px]">table</span>
+        <span class="font-label-md text-label-md text-on-surface uppercase">Raw Source Column</span>
+      </div>
+      <div class="px-md py-sm flex items-center gap-sm">
+        <span class="material-symbols-outlined text-primary text-[20px]">schema</span>
+        <span class="font-label-md text-label-md text-on-surface uppercase">System Field (mapped to)</span>
+      </div>
+    </div>
+
+    <!-- Mapping Rows (populated by JS) -->
+    <div id="mapping-rows" class="flex flex-col">
+      <div class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+        <span class="material-symbols-outlined text-[32px] text-outline block mb-sm">table_chart</span>
+        Select a sheet above to load column mappings.
+      </div>
+    </div>
+
+    <!-- Footer Actions -->
+    <div class="bg-surface-container-lowest px-md py-md flex justify-between items-center border-t border-outline-variant">
+      <span id="footer-info" class="font-body-sm text-body-sm text-on-surface-variant"></span>
+      <div class="flex gap-sm">
+        <button onclick="resetMappings()"
+                class="h-[36px] px-md bg-surface-container-lowest text-on-surface border border-outline-variant
+                       font-label-md text-label-md rounded flex items-center gap-xs
+                       hover:bg-surface-container-low transition-colors">
+          Reset
+        </button>
+        <button onclick="saveMappings()"
+                class="h-[36px] px-md bg-primary-container text-on-primary font-label-md text-label-md
+                       rounded flex items-center gap-xs hover:bg-primary transition-colors">
+          Save Mapping
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Save Status Toast -->
+  <div id="save-toast"
+       class="hidden fixed bottom-lg right-margin bg-on-surface text-inverse-on-surface
+              font-label-md text-label-md px-lg py-sm rounded-lg shadow-lg z-50">
+  </div>
+
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const FILE_ID  = {{ uploaded_file.id }};
+  const ORG_ID   = {{ uploaded_file.organization_id }};
+
+  // Sheets from server
+  const SHEETS = {{ sheets_json | safe }};
+
+  // Existing mappings pre-loaded from server: { sheet_name: { excel_col: {system_field, data_type, is_required} } }
+  const EXISTING = {{ existing_mappings_json | safe }};
+
+  // Standard system fields available for mapping
+  const SYSTEM_FIELDS = [
+    { value: '',             label: '— Select field —',   disabled: true },
+    { value: 'ignore',       label: '— Ignore Column —' },
+    { value: 'pnr',          label: 'PNR' },
+    { value: 'ticket_number',label: 'Ticket Number' },
+    { value: 'transaction_date', label: 'Transaction Date' },
+    { value: 'booking_id',   label: 'Booking ID' },
+    { value: 'passenger_name',label: 'Passenger Name' },
+    { value: 'amount',       label: 'Amount' },
+    { value: 'base_fare',    label: 'Base Fare' },
+    { value: 'tax',          label: 'Tax' },
+    { value: 'currency',     label: 'Currency' },
+    { value: 'origin',       label: 'Origin' },
+    { value: 'destination',  label: 'Destination' },
+    { value: 'flight_number',label: 'Flight Number' },
+    { value: 'departure_date',label: 'Departure Date' },
+    { value: 'sector',       label: 'Sector' },
+    { value: 'fare_class',   label: 'Fare Class' },
+    { value: 'agent_code',   label: 'Agent Code' },
+    { value: 'reference_id', label: 'Reference ID' },
+    { value: 'description',  label: 'Description' },
+  ];
+
+  let activeSheet  = null;
+  let sheetColumns = {}; // sheet_name -> [col, ...]
+
+  // ── Sheet selection ───────────────────────────────────────────────────────
+  async function selectSheet(sheetName, btn) {
+    activeSheet = sheetName;
+
+    // Update tab highlight
+    document.querySelectorAll('.sheet-tab').forEach(t => {
+      t.classList.remove('bg-secondary-container', 'text-on-secondary-container');
+      t.classList.add('text-on-surface-variant');
+    });
+    if (btn) {
+      btn.classList.add('bg-secondary-container', 'text-on-secondary-container');
+      btn.classList.remove('text-on-surface-variant');
+    }
+
+    // Load columns from staging (via API), or use cached
+    if (!sheetColumns[sheetName]) {
+      try {
+        const resp = await fetch(`/file-mapping/columns/${ORG_ID}/${encodeURIComponent(sheetName)}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          sheetColumns[sheetName] = data.columns || [];
+        } else {
+          sheetColumns[sheetName] = [];
+        }
+      } catch {
+        sheetColumns[sheetName] = [];
+      }
+    }
+
+    renderRows(sheetName, sheetColumns[sheetName]);
+  }
+
+  function renderRows(sheetName, columns) {
+    const container = document.getElementById('mapping-rows');
+    const existing  = EXISTING[sheetName] || {};
+
+    document.getElementById('active-sheet-info').textContent =
+      `Sheet: "${sheetName}" — ${columns.length} column${columns.length !== 1 ? 's' : ''} detected`;
+    document.getElementById('footer-info').textContent =
+      `Showing ${columns.length} column${columns.length !== 1 ? 's' : ''} from "${sheetName}"`;
+
+    if (!columns.length) {
+      container.innerHTML = `
+        <div class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+          No columns found for this sheet in the staging data. Ensure the file was imported first.
+        </div>`;
+      return;
+    }
+
+    const rows = columns.map((col, idx) => {
+      const ex          = existing[col];
+      const currentVal  = ex ? ex.system_field : '';
+      const isRequired  = ex ? ex.is_required  : false;
+      const zebraClass  = idx % 2 === 1 ? 'bg-surface' : '';
+
+      const optionsHtml = SYSTEM_FIELDS.map(f =>
+        `<option value="${f.value}" ${f.disabled ? 'disabled' : ''} ${currentVal === f.value ? 'selected' : ''}>
+          ${f.label}
+        </option>`
+      ).join('');
+
+      const badgeHtml = currentVal && currentVal !== 'ignore'
+        ? `<div class="ml-sm bg-[#F0FDF4] text-[#166534] px-sm py-[2px] rounded-full border border-[#bbf7d0] flex items-center gap-xs flex-shrink-0">
+             <span class="material-symbols-outlined text-[14px]">check_circle</span>
+             <span class="font-label-md text-[10px] uppercase">Mapped</span>
+           </div>`
+        : `<div class="ml-sm bg-[#FFFBEB] text-[#92400E] px-sm py-[2px] rounded-full border border-[#fde68a] flex items-center gap-xs flex-shrink-0">
+             <span class="material-symbols-outlined text-[14px]">warning</span>
+             <span class="font-label-md text-[10px] uppercase">Unmapped</span>
+           </div>`;
+
+      return `
+        <div class="grid grid-cols-1 md:grid-cols-2 border-b border-outline-variant hover:bg-surface-container-low transition-colors group ${zebraClass}"
+             data-col="${escapeHtml(col)}">
+          <div class="px-md py-md flex items-center justify-between border-b md:border-b-0 md:border-r border-outline-variant">
+            <div class="flex flex-col">
+              <span class="font-data-mono text-data-mono text-on-surface">${escapeHtml(col)}</span>
+            </div>
+            <span class="material-symbols-outlined text-outline-variant text-[20px] opacity-0 group-hover:opacity-100 transition-opacity">arrow_forward</span>
+          </div>
+          <div class="px-md py-md flex items-center">
+            <div class="relative w-full max-w-[300px]">
+              <select onchange="updateBadge(this)"
+                      class="mapping-select w-full h-[36px] bg-surface-container-lowest border border-outline-variant
+                             rounded px-sm font-body-sm text-body-sm text-on-surface
+                             focus:border-primary focus:ring-2 focus:ring-primary/20 appearance-none outline-none">
+                ${optionsHtml}
+              </select>
+              <span class="material-symbols-outlined absolute right-sm top-1/2 -translate-y-1/2 text-outline-variant pointer-events-none">expand_more</span>
+            </div>
+            <div class="badge-container">${badgeHtml}</div>
+          </div>
+        </div>`;
+    });
+
+    container.innerHTML = rows.join('');
+  }
+
+  function updateBadge(select) {
+    const badgeContainer = select.closest('.px-md').querySelector('.badge-container');
+    const val = select.value;
+    if (val && val !== '' && val !== 'ignore') {
+      badgeContainer.innerHTML = `
+        <div class="ml-sm bg-[#F0FDF4] text-[#166534] px-sm py-[2px] rounded-full border border-[#bbf7d0] flex items-center gap-xs flex-shrink-0">
+          <span class="material-symbols-outlined text-[14px]">check_circle</span>
+          <span class="font-label-md text-[10px] uppercase">Mapped</span>
+        </div>`;
+    } else {
+      badgeContainer.innerHTML = `
+        <div class="ml-sm bg-[#FFFBEB] text-[#92400E] px-sm py-[2px] rounded-full border border-[#fde68a] flex items-center gap-xs flex-shrink-0">
+          <span class="material-symbols-outlined text-[14px]">warning</span>
+          <span class="font-label-md text-[10px] uppercase">Unmapped</span>
+        </div>`;
+    }
+  }
+
+  function resetMappings() {
+    document.querySelectorAll('.mapping-select').forEach(sel => {
+      sel.value = '';
+      updateBadge(sel);
+    });
+  }
+
+  async function saveMappings() {
+    if (!activeSheet) { showToast('Select a sheet first.', true); return; }
+
+    const rows = document.querySelectorAll('#mapping-rows [data-col]');
+    const mappings = [];
+
+    rows.forEach(row => {
+      const col  = row.dataset.col;
+      const sel  = row.querySelector('.mapping-select');
+      const val  = sel ? sel.value : '';
+      if (val && val !== '' && val !== 'ignore') {
+        mappings.push({
+          sheet_name:   activeSheet,
+          excel_column: col,
+          system_field: val,
+          data_type:    'STRING',
+          is_required:  false,
+        });
+      }
+    });
+
+    if (!mappings.length) { showToast('No mappings to save.', true); return; }
+
+    const btn = document.getElementById('save-mapping-btn');
+    btn.disabled = true;
+
+    try {
+      const resp = await fetch('/file-mapping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organization_id: ORG_ID, mappings }),
+      });
+      if (resp.ok) {
+        showToast(`Saved ${mappings.length} mapping(s) successfully.`);
+      } else {
+        const data = await resp.json();
+        showToast(data.detail || 'Save failed.', true);
+      }
+    } catch {
+      showToast('Unable to connect to the server.', true);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function showToast(msg, isError = false) {
+    const t = document.getElementById('save-toast');
+    t.textContent = msg;
+    t.className = `fixed bottom-lg right-margin font-label-md text-label-md px-lg py-sm rounded-lg shadow-lg z-50
+                   ${isError ? 'bg-error text-on-error' : 'bg-on-surface text-inverse-on-surface'}`;
+    t.classList.remove('hidden');
+    setTimeout(() => t.classList.add('hidden'), 3500);
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // Auto-select first sheet on load
+  window.addEventListener('DOMContentLoaded', () => {
+    const first = document.querySelector('.sheet-tab');
+    if (first) selectSheet(first.dataset.sheet, first);
+  });
+</script>
+{% endblock %}

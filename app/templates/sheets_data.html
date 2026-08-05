@@ -1,0 +1,423 @@
+{% extends "base.html" %}
+
+{% block title %}Sheet Data – {{ uploaded_file.original_filename }} – ReconSystem{% endblock %}
+
+{% block extra_styles %}
+.tab-content        { display: none; }
+.tab-content.active { display: block; }
+
+/* Sticky column headers inside scrollable table */
+.data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8f9fa;
+}
+
+/* Thin horizontal scrollbar */
+.table-scroll::-webkit-scrollbar        { height: 6px; }
+.table-scroll::-webkit-scrollbar-track  { background: #f1f1f1; }
+.table-scroll::-webkit-scrollbar-thumb  { background: #c3c6d7; border-radius: 3px; }
+
+/* Zebra stripe */
+.data-table tbody tr:nth-child(even) { background: #f8f9fa; }
+.data-table tbody tr:hover           { background: #edeeef !important; }
+{% endblock %}
+
+{% block content %}
+<main class="max-w-[1440px] mx-auto px-margin py-lg flex flex-col gap-lg">
+
+  <!-- ── Breadcrumbs ──────────────────────────────────────────────────────── -->
+  <div class="flex items-center gap-sm text-on-surface-variant font-label-md text-label-md flex-wrap">
+    <a href="/uploaded-files" class="hover:text-primary transition-colors">Uploaded Files</a>
+    <span class="material-symbols-outlined text-[16px]">chevron_right</span>
+    {% if uploaded_file.organization %}
+    <a href="/organizations/{{ uploaded_file.organization_id }}"
+       class="hover:text-primary transition-colors">
+      {{ uploaded_file.organization.name }}
+    </a>
+    <span class="material-symbols-outlined text-[16px]">chevron_right</span>
+    {% endif %}
+    <span class="text-on-surface truncate max-w-[300px]">{{ uploaded_file.original_filename }}</span>
+  </div>
+
+  <!-- ── Page Header ──────────────────────────────────────────────────────── -->
+  <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-md">
+    <div>
+      <h1 class="font-headline-md text-headline-md text-on-surface">Sheet Data Viewer</h1>
+      <p class="font-body-sm text-body-sm text-on-surface-variant mt-xs">
+        {{ uploaded_file.original_filename }} &nbsp;·&nbsp;
+        {{ sheets | length }} sheet{{ 's' if sheets | length != 1 }} &nbsp;·&nbsp;
+        <span class="font-data-mono text-data-mono">
+          {% if uploaded_file.file_size %}
+            {% if uploaded_file.file_size < 1048576 %}{{ (uploaded_file.file_size / 1024)|round(1) }} KB
+            {% else %}{{ (uploaded_file.file_size / 1048576)|round(1) }} MB{% endif %}
+          {% endif %}
+        </span>
+      </p>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex gap-sm flex-wrap">
+      <a href="/file-mapping-ui/{{ uploaded_file.id }}"
+         class="h-[36px] px-md bg-surface-container-lowest border border-outline-variant
+                text-on-surface font-label-md text-label-md rounded
+                hover:bg-surface-container transition-colors flex items-center gap-xs">
+        <span class="material-symbols-outlined text-[18px]">schema</span>
+        Map Columns
+      </a>
+      {% if uploaded_file.upload_status.value == 'PROCESSED' %}
+      <a href="/processing-result/{{ uploaded_file.id }}"
+         class="h-[36px] px-md bg-primary-container text-on-primary
+                font-label-md text-label-md rounded
+                hover:opacity-90 transition-opacity flex items-center gap-xs">
+        <span class="material-symbols-outlined text-[18px]">receipt_long</span>
+        View Transactions
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ── File Info Card ───────────────────────────────────────────────────── -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-md">
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-md">
+      <p class="font-label-md text-label-md text-on-surface-variant uppercase mb-xs">Organization</p>
+      <p class="font-body-sm text-body-sm text-on-surface font-medium">
+        {{ uploaded_file.organization.name if uploaded_file.organization else '—' }}
+      </p>
+    </div>
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-md">
+      <p class="font-label-md text-label-md text-on-surface-variant uppercase mb-xs">Uploaded</p>
+      <p class="font-data-mono text-data-mono text-on-surface">
+        {{ uploaded_file.uploaded_at.strftime('%Y-%m-%d') if uploaded_file.uploaded_at else '—' }}
+      </p>
+    </div>
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-md">
+      <p class="font-label-md text-label-md text-on-surface-variant uppercase mb-xs">Status</p>
+      {% if uploaded_file.upload_status.value == 'PROCESSED' %}
+        <span class="inline-flex items-center px-2 py-1 rounded text-[11px] font-semibold bg-[#F0FDF4] text-[#166534]">Processed</span>
+      {% elif uploaded_file.upload_status.value == 'PROCESSING' %}
+        <span class="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold bg-[#FFFBEB] text-[#92400E]">
+          <span class="material-symbols-outlined text-[12px] animate-spin">sync</span>Processing
+        </span>
+      {% elif uploaded_file.upload_status.value == 'FAILED' %}
+        <span class="inline-flex items-center px-2 py-1 rounded text-[11px] font-semibold bg-[#FEF2F2] text-[#991B1B]">Failed</span>
+      {% else %}
+        <span class="inline-flex items-center px-2 py-1 rounded text-[11px] font-semibold bg-surface-container-high text-on-surface-variant">Uploaded</span>
+      {% endif %}
+    </div>
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-md">
+      <p class="font-label-md text-label-md text-on-surface-variant uppercase mb-xs">Total Sheets</p>
+      <p class="font-display-sm text-display-sm text-on-surface font-data-mono">{{ sheets | length }}</p>
+    </div>
+  </div>
+
+  <!-- ── Sheet Tabs ───────────────────────────────────────────────────────── -->
+  {% if sheets %}
+  <div class="flex flex-col gap-md">
+
+    <!-- Tab Button Row -->
+    <div class="flex flex-wrap gap-xs border-b border-outline-variant pb-0" id="sheet-tab-bar">
+      {% for sheet in sheets %}
+      <button
+        id="tab-btn-{{ sheet.id }}"
+        onclick="switchSheet({{ sheet.id }})"
+        class="sheet-tab-btn px-md py-sm font-label-md text-label-md rounded-t border border-b-0
+               transition-colors flex items-center gap-xs
+               {% if loop.first %}
+                 bg-surface-container-lowest border-outline-variant text-primary border-b-white
+               {% else %}
+                 bg-surface-container border-transparent text-on-surface-variant hover:text-on-surface
+               {% endif %}">
+        <span class="material-symbols-outlined text-[16px]">table_chart</span>
+        {{ sheet.sheet_name }}
+        <span class="font-data-mono text-[10px] text-on-surface-variant ml-xs">
+          {{ sheet.total_rows }} rows
+        </span>
+      </button>
+      {% endfor %}
+    </div>
+
+    <!-- Tab Content Panels -->
+    {% for sheet in sheets %}
+    <div id="sheet-panel-{{ sheet.id }}"
+         class="sheet-panel {% if loop.first %}active{% endif %} flex flex-col gap-md">
+
+      <!-- Sheet Meta Bar -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-sm
+                  bg-surface border border-outline-variant rounded-lg px-md py-sm">
+        <div class="flex items-center gap-md flex-wrap font-body-sm text-body-sm text-on-surface-variant">
+          <span class="flex items-center gap-xs">
+            <span class="material-symbols-outlined text-[16px]">grid_on</span>
+            <strong class="text-on-surface">{{ sheet.total_rows }}</strong> rows
+          </span>
+          <span class="text-outline-variant">·</span>
+          <span class="flex items-center gap-xs">
+            <span class="material-symbols-outlined text-[16px]">view_column</span>
+            <strong class="text-on-surface">{{ sheet.total_columns }}</strong> columns
+          </span>
+          <span class="text-outline-variant">·</span>
+          <span>Sheet index: <strong class="text-on-surface font-data-mono text-data-mono">{{ sheet.sheet_index }}</strong></span>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div class="flex items-center gap-sm">
+          <span id="page-info-{{ sheet.id }}"
+                class="font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap"></span>
+          <button onclick="changePage({{ sheet.id }}, -1)"
+                  id="prev-btn-{{ sheet.id }}"
+                  class="w-[32px] h-[32px] rounded border border-outline-variant flex items-center justify-center
+                         text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-40"
+                  disabled>
+            <span class="material-symbols-outlined text-[18px]">chevron_left</span>
+          </button>
+          <button onclick="changePage({{ sheet.id }}, 1)"
+                  id="next-btn-{{ sheet.id }}"
+                  class="w-[32px] h-[32px] rounded border border-outline-variant flex items-center justify-center
+                         text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-40">
+            <span class="material-symbols-outlined text-[18px]">chevron_right</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Data Table -->
+      <div class="bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden shadow-sm">
+        <div class="table-scroll overflow-x-auto overflow-y-auto" style="max-height: 600px;">
+          <table class="data-table w-full text-left border-collapse"
+                 id="table-{{ sheet.id }}" style="min-width: max-content;">
+            <thead>
+              <tr class="border-b border-outline-variant">
+                <!-- Row number column -->
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant
+                           uppercase tracking-wider w-[60px] border-r border-outline-variant/50">
+                  #
+                </th>
+                <!-- Dynamic data columns injected by JS -->
+              </tr>
+            </thead>
+            <tbody id="tbody-{{ sheet.id }}">
+              <tr>
+                <td class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+                  <span class="material-symbols-outlined animate-spin text-outline block mx-auto mb-sm">sync</span>
+                  Loading data…
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Table Footer -->
+        <div class="px-md py-sm border-t border-outline-variant bg-surface flex items-center justify-between">
+          <span id="footer-info-{{ sheet.id }}"
+                class="font-body-sm text-body-sm text-on-surface-variant"></span>
+          <div class="flex items-center gap-sm">
+            <label class="font-label-md text-label-md text-on-surface-variant">Rows per page:</label>
+            <select onchange="changePageSize({{ sheet.id }}, this.value)"
+                    class="h-[28px] px-sm border border-outline-variant rounded bg-surface
+                           font-body-sm text-body-sm text-on-surface focus:outline-none focus:border-primary">
+              <option value="25">25</option>
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    {% endfor %}
+
+  </div>
+  {% else %}
+  <!-- Empty State -->
+  <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-xl text-center">
+    <span class="material-symbols-outlined text-outline text-[48px] block mb-md">table_chart</span>
+    <p class="font-body-md text-body-md text-on-surface-variant mb-xs">No sheets found for this file.</p>
+    <p class="font-body-sm text-body-sm text-outline">
+      The file may not have been ingested yet, or it contains no worksheets.
+    </p>
+  </div>
+  {% endif %}
+
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const FILE_ID = {{ uploaded_file.id }};
+
+  // Per-sheet state: { sheet_id: { page, pageSize, totalRows, totalPages } }
+  const state = {};
+
+  {% for sheet in sheets %}
+  state[{{ sheet.id }}] = {
+    page:       1,
+    pageSize:   50,
+    totalRows:  {{ sheet.total_rows }},
+    totalPages: 1,
+    loaded:     false,
+  };
+  {% endfor %}
+
+  // ── Tab switching ──────────────────────────────────────────────────────────
+  function switchSheet(sheetId) {
+    // Hide all panels
+    document.querySelectorAll('.sheet-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.sheet-tab-btn').forEach(b => {
+      b.classList.remove('bg-surface-container-lowest', 'text-primary', 'border-outline-variant');
+      b.classList.add('bg-surface-container', 'border-transparent', 'text-on-surface-variant');
+    });
+
+    // Show target panel
+    document.getElementById('sheet-panel-' + sheetId).classList.add('active');
+    const btn = document.getElementById('tab-btn-' + sheetId);
+    btn.classList.add('bg-surface-container-lowest', 'text-primary', 'border-outline-variant');
+    btn.classList.remove('bg-surface-container', 'border-transparent', 'text-on-surface-variant');
+
+    // Load data if not already loaded
+    if (!state[sheetId].loaded) {
+      loadSheetData(sheetId);
+    }
+  }
+
+  // ── Pagination ─────────────────────────────────────────────────────────────
+  function changePage(sheetId, delta) {
+    const s = state[sheetId];
+    const newPage = s.page + delta;
+    if (newPage < 1 || newPage > s.totalPages) return;
+    s.page = newPage;
+    loadSheetData(sheetId);
+  }
+
+  function changePageSize(sheetId, size) {
+    state[sheetId].pageSize = parseInt(size);
+    state[sheetId].page     = 1;
+    loadSheetData(sheetId);
+  }
+
+  // ── Data loading ───────────────────────────────────────────────────────────
+  async function loadSheetData(sheetId) {
+    const s     = state[sheetId];
+    const tbody = document.getElementById('tbody-' + sheetId);
+
+    tbody.innerHTML = `
+      <tr>
+        <td class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+          <span class="material-symbols-outlined animate-spin text-outline block mx-auto mb-sm">sync</span>
+          Loading…
+        </td>
+      </tr>`;
+
+    try {
+      const url = `/files/${FILE_ID}/sheets-data/${sheetId}?page=${s.page}&page_size=${s.pageSize}`;
+      const resp = await fetch(url);
+
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.detail || 'Request failed');
+      }
+
+      const data = await resp.json();
+
+      // Update state
+      s.totalRows  = data.total_rows;
+      s.totalPages = data.total_pages;
+      s.loaded     = true;
+
+      // Update pagination controls
+      updatePaginationUI(sheetId, data);
+
+      // Render table header (columns)
+      const table  = document.getElementById('table-' + sheetId);
+      const thead  = table.querySelector('thead tr');
+      // Clear all but the row-number th
+      while (thead.children.length > 1) thead.removeChild(thead.lastChild);
+      data.columns.forEach(col => {
+        const th = document.createElement('th');
+        th.className = 'px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap';
+        th.textContent = col;
+        thead.appendChild(th);
+      });
+
+      // Render rows
+      if (!data.rows.length) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="${data.columns.length + 1}"
+                class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+              No data rows found for this sheet.
+            </td>
+          </tr>`;
+        return;
+      }
+
+      tbody.innerHTML = data.rows.map(row => {
+        const cells = data.columns.map(col => {
+          const val = row.data[col];
+          const display = (val === null || val === undefined) ? '' : String(val);
+          return `<td class="px-md py-sm font-body-sm text-body-sm text-on-surface
+                             border-r border-outline-variant/20 whitespace-nowrap
+                             max-w-[200px] truncate"
+                      title="${escapeHtml(display)}">${escapeHtml(display)}</td>`;
+        }).join('');
+
+        return `<tr class="border-b border-outline-variant/30 h-[40px] transition-colors">
+                  <td class="px-md py-sm font-data-mono text-data-mono text-on-surface-variant
+                             text-center border-r border-outline-variant/50 w-[60px]">
+                    ${row.row_number}
+                  </td>
+                  ${cells}
+                </tr>`;
+      }).join('');
+
+    } catch (err) {
+      tbody.innerHTML = `
+        <tr>
+          <td class="px-md py-lg text-center font-body-sm text-body-sm text-error">
+            <span class="material-symbols-outlined text-[24px] block mx-auto mb-sm">error</span>
+            Failed to load data: ${escapeHtml(err.message)}
+          </td>
+        </tr>`;
+    }
+  }
+
+  function updatePaginationUI(sheetId, data) {
+    const s = state[sheetId];
+    const start = ((s.page - 1) * s.pageSize) + 1;
+    const end   = Math.min(s.page * s.pageSize, data.total_rows);
+
+    document.getElementById('page-info-' + sheetId).textContent =
+      `Page ${data.page} of ${data.total_pages}`;
+
+    document.getElementById('footer-info-' + sheetId).textContent =
+      data.total_rows > 0
+        ? `Showing rows ${start}–${end} of ${data.total_rows.toLocaleString()}`
+        : 'No rows';
+
+    document.getElementById('prev-btn-' + sheetId).disabled = (data.page <= 1);
+    document.getElementById('next-btn-' + sheetId).disabled = (data.page >= data.total_pages);
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ── Auto-load first sheet on page load ────────────────────────────────────
+  window.addEventListener('DOMContentLoaded', () => {
+    {% if sheets %}
+    const firstSheetId = {{ sheets[0].id }};
+    loadSheetData(firstSheetId);
+    {% endif %}
+  });
+</script>
+
+<style>
+  /* Make panel visible/hidden */
+  .sheet-panel        { display: none; }
+  .sheet-panel.active { display: flex; flex-direction: column; gap: 1rem; }
+</style>
+{% endblock %}
