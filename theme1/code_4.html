@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Dashboard - ReconSystem</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+                "on-error-container": "#93000a",
+                "outline-variant": "#c3c6d7",
+                "on-surface-variant": "#434655",
+                "on-primary-fixed": "#00174b",
+                "on-background": "#191c1d",
+                "on-secondary-fixed-variant": "#38485d",
+                "secondary-container": "#d0e1fb",
+                "primary-fixed": "#dbe1ff",
+                "surface-container-highest": "#e1e3e4",
+                "on-primary": "#ffffff",
+                "surface-dim": "#d9dadb",
+                "on-tertiary": "#ffffff",
+                "surface-container-high": "#e7e8e9",
+                "on-tertiary-fixed": "#360f00",
+                "secondary-fixed-dim": "#b7c8e1",
+                "tertiary-container": "#bc4800",
+                "on-tertiary-fixed-variant": "#7d2d00",
+                "on-surface": "#191c1d",
+                "on-primary-container": "#eeefff",
+                "on-error": "#ffffff",
+                "primary-container": "#2563eb",
+                "inverse-on-surface": "#f0f1f2",
+                "on-secondary-fixed": "#0b1c30",
+                "tertiary-fixed": "#ffdbcd",
+                "surface": "#f8f9fa",
+                "primary-fixed-dim": "#b4c5ff",
+                "secondary": "#505f76",
+                "surface-variant": "#e1e3e4",
+                "error": "#ba1a1a",
+                "surface-container": "#edeeef",
+                "secondary-fixed": "#d3e4fe",
+                "surface-container-low": "#f3f4f5",
+                "on-secondary-container": "#54647a",
+                "background": "#f8f9fa",
+                "surface-tint": "#0053db",
+                "inverse-surface": "#2e3132",
+                "on-tertiary-container": "#ffede6",
+                "primary": "#004ac6",
+                "on-secondary": "#ffffff",
+                "surface-bright": "#f8f9fa",
+                "outline": "#737686",
+                "inverse-primary": "#b4c5ff",
+                "surface-container-lowest": "#ffffff",
+                "error-container": "#ffdad6",
+                "tertiary": "#943700",
+                "on-primary-fixed-variant": "#003ea8",
+                "tertiary-fixed-dim": "#ffb596"
+        },
+        "borderRadius": {
+                "DEFAULT": "0.125rem",
+                "lg": "0.25rem",
+                "xl": "0.5rem",
+                "full": "0.75rem"
+        },
+        "spacing": {
+                "sm": "8px",
+                "xl": "32px",
+                "md": "16px",
+                "lg": "24px",
+                "gutter": "16px",
+                "base": "8px",
+                "xs": "4px",
+                "margin": "24px"
+        },
+        "fontFamily": {
+                "label-md": ["Inter"],
+                "headline-md": ["Inter"],
+                "display-sm": ["Inter"],
+                "body-md": ["Inter"],
+                "headline-sm": ["Inter"],
+                "body-sm": ["Inter"],
+                "data-mono": ["JetBrains Mono"],
+                "title-lg": ["Inter"]
+        },
+        "fontSize": {
+                "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                "display-sm": ["30px", {"lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                "data-mono": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+                "title-lg": ["18px", {"lineHeight": "28px", "fontWeight": "500"}]
+        }
+      }
+    }
+  }
+</script>
+<style>
+    body { background-color: #f8f9fa; }
+    .material-symbols-outlined { font-variation-settings: 'FILL' 0; }
+</style>
+</head>
+<body class="bg-background text-on-background font-body-md text-body-md min-h-screen antialiased">
+<!-- TopNavBar Wrapper for full width bg and border -->
+<div class="fixed top-0 w-full z-50 h-[64px] bg-surface-container-lowest border-b border-outline-variant flex items-center">
+<!-- Component Inner Layout -->
+<nav class="w-full h-full flex justify-between items-center px-margin max-w-[1440px] mx-auto">
+<!-- Brand -->
+<div class="flex items-center gap-md">
+<span class="font-title-lg text-title-lg font-bold text-primary">ReconSystem</span>
+</div>
+<!-- Navigation Links -->
+<div class="hidden md:flex items-center gap-lg h-full">
+<a class="font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors h-full flex items-center px-sm" href="#">Upload</a>
+<a class="font-label-md text-label-md text-primary border-b-2 border-primary h-full flex items-center px-sm" href="#">Dashboard</a>
+<a class="font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors h-full flex items-center px-sm" href="#">Organizations</a>
+<a class="font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors h-full flex items-center px-sm" href="#">Uploaded Files</a>
+</div>
+<!-- Trailing Actions & Profile -->
+<div class="flex items-center gap-sm">
+<button class="p-sm rounded-full text-on-surface-variant hover:bg-surface-container transition-colors flex items-center justify-center active:opacity-80 transition-opacity">
+<span class="material-symbols-outlined text-[20px]">notifications</span>
+</button>
+<button class="p-sm rounded-full text-on-surface-variant hover:bg-surface-container transition-colors flex items-center justify-center active:opacity-80 transition-opacity">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+</button>
+<button class="p-sm rounded-full text-on-surface-variant hover:bg-surface-container transition-colors flex items-center justify-center active:opacity-80 transition-opacity">
+<span class="material-symbols-outlined text-[20px]">help</span>
+</button>
+<div class="w-[32px] h-[32px] rounded-full bg-surface-container-high border border-outline-variant overflow-hidden ml-sm cursor-pointer hover:opacity-80 transition-opacity">
+<img alt="User profile avatar" class="w-full h-full object-cover" data-alt="A professional headshot of a corporate user, neutral lighting, minimalist background, crisp focus, high resolution, soft cool tones. The user represents a typical financial operations manager using a secure internal tool." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDB5D02eRKWf52Wq7kZmIc8m0prZ1AJWmbX48TgOAF6zaXj67tQqzT5W6L_9LKuTfqNeX8hSwCckD0ztMe21uRGgv3UrWP3vGwNH9SsaXEbd4JAdqKyzt2deMZWoGkF_rarjpa5gB_UnUWuXaszZs3rLayfDE625w_Ld9vZoOxHQJtlpwa7uovWm2ui_nUxcc2Beu4jn1Ko1U2zZuWspLfLKTwdwY6G_ov3Z0Q-LMb0jBHmTBIIGii_cw"/>
+</div>
+</div>
+</nav>
+</div>
+<!-- Main Canvas -->
+<main class="pt-[96px] pb-xl px-margin max-w-[1440px] mx-auto flex flex-col gap-lg">
+<!-- Page Header -->
+<header class="flex flex-col md:flex-row md:items-end justify-between gap-md mb-sm">
+<div>
+<h1 class="font-display-sm text-display-sm text-on-surface mb-xs">System Overview</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Real-time metrics for reconciliation operations.</p>
+</div>
+<div class="flex gap-sm">
+<span class="inline-flex items-center gap-xs px-md py-sm bg-surface-container-lowest border border-outline-variant rounded-lg font-label-md text-label-md text-on-surface">
+<span class="material-symbols-outlined text-[16px]">calendar_today</span>
+                Last 30 Days
+            </span>
+</div>
+</header>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-md">
+<!-- Top Metrics Row (Spans 4 columns on mobile, individual on desktop) -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col gap-sm relative overflow-hidden group hover:bg-surface-container-low transition-colors duration-300">
+<div class="flex justify-between items-start w-full">
+<span class="font-label-md text-label-md text-on-surface-variant uppercase">Total Organizations</span>
+<span class="material-symbols-outlined text-outline-variant">domain</span>
+</div>
+<div class="font-display-sm text-display-sm text-on-surface mt-xs font-data-mono">142</div>
+<div class="flex items-center gap-xs font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-[16px] text-tertiary-container" style="font-variation-settings: 'FILL' 1;">arrow_upward</span>
+<span class="text-tertiary-container font-medium">+12%</span>
+<span class="text-outline">vs last month</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col gap-sm relative overflow-hidden group hover:bg-surface-container-low transition-colors duration-300">
+<div class="flex justify-between items-start w-full">
+<span class="font-label-md text-label-md text-on-surface-variant uppercase">Files Uploaded</span>
+<span class="material-symbols-outlined text-outline-variant">upload_file</span>
+</div>
+<div class="font-display-sm text-display-sm text-on-surface mt-xs font-data-mono">8,409</div>
+<div class="flex items-center gap-xs font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-[16px] text-tertiary-container" style="font-variation-settings: 'FILL' 1;">arrow_upward</span>
+<span class="text-tertiary-container font-medium">+5.2%</span>
+<span class="text-outline">vs last month</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col gap-sm relative overflow-hidden group hover:bg-surface-container-low transition-colors duration-300">
+<div class="flex justify-between items-start w-full">
+<span class="font-label-md text-label-md text-on-surface-variant uppercase">Processing Files</span>
+<span class="material-symbols-outlined text-outline-variant">autorenew</span>
+</div>
+<div class="font-display-sm text-display-sm text-on-surface mt-xs font-data-mono">34</div>
+<div class="flex items-center gap-xs font-body-sm text-body-sm">
+<span class="w-[8px] h-[8px] rounded-full bg-[#92400E]"></span>
+<span class="text-on-surface-variant">Active pipelines</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col gap-sm relative overflow-hidden group hover:bg-surface-container-low transition-colors duration-300">
+<div class="flex justify-between items-start w-full">
+<span class="font-label-md text-label-md text-on-surface-variant uppercase">Total Transactions</span>
+<span class="material-symbols-outlined text-outline-variant">receipt_long</span>
+</div>
+<div class="font-display-sm text-display-sm text-on-surface mt-xs font-data-mono">1.2M</div>
+<div class="flex items-center gap-xs font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-[16px] text-tertiary-container" style="font-variation-settings: 'FILL' 1;">arrow_upward</span>
+<span class="text-tertiary-container font-medium">+18%</span>
+<span class="text-outline">volume spike</span>
+</div>
+</div>
+<!-- Middle Section: Asymmetric Split (Files by Status & Quick Actions) -->
+<div class="md:col-span-3 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col h-full">
+<div class="flex justify-between items-center mb-md border-b border-outline-variant pb-sm">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Files by Status</h2>
+<button class="font-label-md text-label-md text-primary flex items-center gap-xs hover:underline">
+                    View Details
+                    <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+<div class="flex-1 flex flex-col justify-center gap-lg">
+<!-- Status Row: Uploaded -->
+<div class="flex items-center gap-md">
+<div class="w-[120px] font-label-md text-label-md text-on-surface-variant flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px]">cloud_done</span>
+                        Uploaded
+                    </div>
+<div class="flex-1 h-[8px] bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-outline w-[15%]"></div>
+</div>
+<div class="w-[40px] text-right font-data-mono text-body-sm text-on-surface">1,261</div>
+</div>
+<!-- Status Row: Processing -->
+<div class="flex items-center gap-md">
+<div class="w-[120px] font-label-md text-label-md text-[#92400E] flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px]">sync</span>
+                        Processing
+                    </div>
+<div class="flex-1 h-[8px] bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-[#FFFBEB] w-[5%] border border-[#92400E]"></div>
+</div>
+<div class="w-[40px] text-right font-data-mono text-body-sm text-on-surface">34</div>
+</div>
+<!-- Status Row: Processed -->
+<div class="flex items-center gap-md">
+<div class="w-[120px] font-label-md text-label-md text-[#166534] flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px]">check_circle</span>
+                        Processed
+                    </div>
+<div class="flex-1 h-[8px] bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-[#166534] w-[75%]"></div>
+</div>
+<div class="w-[40px] text-right font-data-mono text-body-sm text-on-surface">7,102</div>
+</div>
+<!-- Status Row: Failed -->
+<div class="flex items-center gap-md">
+<div class="w-[120px] font-label-md text-label-md text-[#991B1B] flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px]">error</span>
+                        Failed
+                    </div>
+<div class="flex-1 h-[8px] bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-[#991B1B] w-[5%]"></div>
+</div>
+<div class="w-[40px] text-right font-data-mono text-body-sm text-on-surface">12</div>
+</div>
+</div>
+</div>
+<!-- Quick Actions Sidebar within grid -->
+<div class="md:col-span-1 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col">
+<h2 class="font-headline-sm text-headline-sm text-on-surface mb-md pb-sm border-b border-outline-variant">Quick Actions</h2>
+<div class="flex flex-col gap-sm mt-xs">
+<button class="w-full flex items-center justify-center gap-sm bg-primary text-on-primary font-label-md text-label-md h-[40px] rounded-lg hover:bg-on-primary-fixed-variant transition-colors">
+<span class="material-symbols-outlined text-[18px]">upload</span>
+                    Upload a File
+                </button>
+<button class="w-full flex items-center justify-start gap-sm bg-surface-container-lowest border border-outline-variant text-on-surface font-label-md text-label-md h-[40px] px-md rounded-lg hover:bg-surface-container-low transition-colors mt-sm">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">domain</span>
+                    View Organizations
+                </button>
+<button class="w-full flex items-center justify-start gap-sm bg-surface-container-lowest border border-outline-variant text-on-surface font-label-md text-label-md h-[40px] px-md rounded-lg hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">folder_open</span>
+                    View Uploaded Files
+                </button>
+</div>
+<div class="mt-auto pt-lg">
+<div class="bg-surface-container rounded-lg p-md flex gap-sm items-start border border-outline-variant border-dashed">
+<span class="material-symbols-outlined text-outline-variant text-[20px]">info</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant">System maintenance scheduled for Friday, 02:00 AM UTC. Expect 15 mins downtime.</p>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

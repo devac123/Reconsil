@@ -1,10 +1,15 @@
-from fastapi import FastAPI,Request
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+# API Routes
 from app.routes.api.file_routes import router as file_router
 from app.routes.api.file_mapping_routes import router as file_mapping_router
 from app.routes.api.transaction_routes import router as transaction_router
-from fastapi.responses import HTMLResponse
+from app.routes.api.organization_routes import router as organization_router
+
+# Page Routes (server-rendered HTML)
+from app.routes.pages import router as pages_router
 
 app = FastAPI(
     title="Reconciliation System",
@@ -12,17 +17,12 @@ app = FastAPI(
     version="1.0.0",
 )
 
-templates = Jinja2Templates(directory="app/templates")
-
+# ── API Routers ───────────────────────────────────────────────────────────────
 app.include_router(file_router)
 app.include_router(file_mapping_router)
 app.include_router(transaction_router)
+app.include_router(organization_router)
 
-@app.get("/")
-def upload_page(request: Request):
-    
-    return templates.TemplateResponse(
-        request=request,
-        name="upload.html",
-        context={}
-    )
+# ── Page Routers (HTML) ───────────────────────────────────────────────────────
+# Must be registered last so API routes take priority on prefix overlaps.
+app.include_router(pages_router)

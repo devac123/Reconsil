@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Column Mapping - ReconSystem</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error-container": "#93000a",
+                        "outline-variant": "#c3c6d7",
+                        "on-surface-variant": "#434655",
+                        "on-primary-fixed": "#00174b",
+                        "on-background": "#191c1d",
+                        "on-secondary-fixed-variant": "#38485d",
+                        "secondary-container": "#d0e1fb",
+                        "primary-fixed": "#dbe1ff",
+                        "surface-container-highest": "#e1e3e4",
+                        "on-primary": "#ffffff",
+                        "surface-dim": "#d9dadb",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-high": "#e7e8e9",
+                        "on-tertiary-fixed": "#360f00",
+                        "secondary-fixed-dim": "#b7c8e1",
+                        "tertiary-container": "#bc4800",
+                        "on-tertiary-fixed-variant": "#7d2d00",
+                        "on-surface": "#191c1d",
+                        "on-primary-container": "#eeefff",
+                        "on-error": "#ffffff",
+                        "primary-container": "#2563eb",
+                        "inverse-on-surface": "#f0f1f2",
+                        "on-secondary-fixed": "#0b1c30",
+                        "tertiary-fixed": "#ffdbcd",
+                        "surface": "#f8f9fa",
+                        "primary-fixed-dim": "#b4c5ff",
+                        "secondary": "#505f76",
+                        "surface-variant": "#e1e3e4",
+                        "error": "#ba1a1a",
+                        "surface-container": "#edeeef",
+                        "secondary-fixed": "#d3e4fe",
+                        "surface-container-low": "#f3f4f5",
+                        "on-secondary-container": "#54647a",
+                        "background": "#f8f9fa",
+                        "surface-tint": "#0053db",
+                        "inverse-surface": "#2e3132",
+                        "on-tertiary-container": "#ffede6",
+                        "primary": "#004ac6",
+                        "on-secondary": "#ffffff",
+                        "surface-bright": "#f8f9fa",
+                        "outline": "#737686",
+                        "inverse-primary": "#b4c5ff",
+                        "surface-container-lowest": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "tertiary": "#943700",
+                        "on-primary-fixed-variant": "#003ea8",
+                        "tertiary-fixed-dim": "#ffb596"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "sm": "8px",
+                        "xl": "32px",
+                        "md": "16px",
+                        "lg": "24px",
+                        "gutter": "16px",
+                        "base": "8px",
+                        "xs": "4px",
+                        "margin": "24px"
+                    },
+                    "fontFamily": {
+                        "label-md": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "display-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "data-mono": ["JetBrains Mono"],
+                        "title-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "display-sm": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "data-mono": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "title-lg": ["18px", { "lineHeight": "28px", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: theme('colors.background'); color: theme('colors.on-background'); }
+    </style>
+</head>
+<body class="antialiased min-h-screen font-body-md">
+<!-- TopNavBar -->
+<header class="bg-surface-container-lowest dark:bg-surface-dim docked full-width top-0 border-b border-outline-variant dark:border-outline flat no shadows fixed w-full z-50 h-[64px] flex justify-between items-center px-margin max-w-[1440px] mx-auto transition-all duration-200 ease-in-out">
+<div class="flex items-center gap-lg h-full">
+<span class="font-title-lg text-title-lg font-bold text-primary dark:text-primary-fixed">ReconSystem</span>
+<nav class="hidden md:flex h-full items-center gap-md ml-lg">
+<a class="h-full flex items-center font-label-md text-label-md text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-on-surface-variant/10 transition-colors active:opacity-80 px-sm pt-[2px]" href="#">Upload</a>
+<a class="h-full flex items-center font-label-md text-label-md text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-on-surface-variant/10 transition-colors active:opacity-80 px-sm pt-[2px]" href="#">Dashboard</a>
+<a class="h-full flex items-center font-label-md text-label-md text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-on-surface-variant/10 transition-colors active:opacity-80 px-sm pt-[2px]" href="#">Organizations</a>
+<a class="h-full flex items-center font-label-md text-label-md text-primary dark:text-primary-fixed border-b-2 border-primary dark:border-primary-fixed hover:bg-surface-container dark:hover:bg-on-surface-variant/10 transition-colors active:opacity-80 px-sm" href="#">Uploaded Files</a>
+</nav>
+</div>
+<div class="flex items-center gap-sm">
+<button aria-label="notifications" class="p-sm rounded-full text-on-surface-variant hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button aria-label="settings" class="p-sm rounded-full text-on-surface-variant hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+<button aria-label="help" class="p-sm rounded-full text-on-surface-variant hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+</button>
+<div class="ml-sm w-[32px] h-[32px] rounded-full overflow-hidden border border-outline-variant bg-surface-container-high">
+<img alt="User profile avatar" class="w-full h-full object-cover" data-alt="A clean, professional headshot of a person looking directly at the camera. The background is a soft, solid light grey color. The lighting is studio-quality, bright and even, casting no harsh shadows. The style is modern corporate photography, suitable for a professional software application profile avatar." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBkA54BDaETljmyZ9veVinDg9XMJ6z_vNwonb-K7bhnKZ-ueAx4qTR-anenRTC_0I1ArqmmcA1-UWpLMkIwTyAZsUoLI0MP7OiPEoxSqx7fv-zNb1peqmbIcEyxzjvWdn_RRxwJZANlZxEMNWQpdTWWzxXjKR16idWYvct3wKgzq1-pzoUvV2kaTb_nCcDDt_sSIs9jG1h2v3-nvNlF14PFr6aD2oOFlKhchZvWzPuo3q6fPD3uoavOmA"/>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="pt-[88px] pb-xl px-margin max-w-[1440px] mx-auto min-h-screen">
+<!-- Header Section -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-md mb-lg">
+<div>
+<div class="flex items-center gap-sm mb-xs">
+<span class="font-label-md text-label-md text-on-surface-variant uppercase">Acme Corp</span>
+<span class="text-outline-variant material-symbols-outlined text-[16px]">chevron_right</span>
+<span class="font-label-md text-label-md text-on-surface-variant uppercase">Oct_Bank_Statement.xlsx</span>
+</div>
+<h1 class="font-headline-md text-headline-md text-on-surface">Column Mapping</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-xs">Map the extracted columns from your file to the standard reconciliation fields.</p>
+</div>
+<div class="flex items-center gap-md">
+<div class="flex bg-surface-container-lowest border border-outline-variant rounded p-xs">
+<button class="px-md py-xs font-label-md text-label-md bg-secondary-container text-on-secondary-container rounded-sm transition-colors">Sheet1</button>
+<button class="px-md py-xs font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-low rounded-sm transition-colors">Transactions</button>
+<button class="px-md py-xs font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-low rounded-sm transition-colors">Summary</button>
+</div>
+<button class="h-[36px] px-md bg-primary-container text-on-primary font-label-md text-label-md rounded flex items-center gap-xs hover:bg-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]">save</span>
+                    Save Mapping
+                </button>
+</div>
+</div>
+<!-- Mapping Interface Container -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden flex flex-col">
+<!-- Table Header -->
+<div class="grid grid-cols-1 md:grid-cols-2 bg-surface border-b border-outline-variant">
+<div class="px-md py-sm flex items-center gap-sm border-b md:border-b-0 md:border-r border-outline-variant">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]">table</span>
+<span class="font-label-md text-label-md text-on-surface uppercase">Raw Source Column</span>
+</div>
+<div class="px-md py-sm flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary text-[20px]">schema</span>
+<span class="font-label-md text-label-md text-on-surface uppercase">Standard Field</span>
+</div>
+</div>
+<!-- Mapping Rows -->
+<div class="flex flex-col">
+<!-- Row 1 (Mapped) -->
+<div class="grid grid-cols-1 md:grid-cols-2 border-b border-outline-variant hover:bg-surface-container-low transition-colors group">
+<div class="px-md py-md flex items-center justify-between border-b md:border-b-0 md:border-r border-outline-variant">
+<div class="flex flex-col">
+<span class="font-data-mono text-data-mono text-on-surface">Txn_Date</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[12px] mt-xs">e.g. 2023-10-01, 2023-10-02</span>
+</div>
+<span class="material-symbols-outlined text-outline-variant text-[20px] opacity-0 group-hover:opacity-100 transition-opacity">arrow_forward</span>
+</div>
+<div class="px-md py-md flex items-center bg-surface-bright">
+<div class="relative w-full max-w-[300px]">
+<select class="w-full h-[36px] bg-surface-container-lowest border border-outline-variant rounded px-sm font-body-sm text-body-sm text-on-surface focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 appearance-none outline-none">
+<option disabled="" value="">Select standard field...</option>
+<option selected="" value="date">Date</option>
+<option value="amount">Amount</option>
+<option value="description">Description</option>
+<option value="reference">Reference ID</option>
+<option value="account">Account Number</option>
+</select>
+<span class="material-symbols-outlined absolute right-sm top-1/2 -translate-y-1/2 text-outline-variant pointer-events-none">expand_more</span>
+</div>
+<div class="ml-sm bg-[#F0FDF4] text-[#166534] px-sm py-[2px] rounded-full border border-[#bbf7d0] flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]">check_circle</span>
+<span class="font-label-md text-[10px] uppercase">Mapped</span>
+</div>
+</div>
+</div>
+<!-- Row 2 (Mapped) -->
+<div class="grid grid-cols-1 md:grid-cols-2 border-b border-outline-variant hover:bg-surface-container-low transition-colors bg-surface group">
+<div class="px-md py-md flex items-center justify-between border-b md:border-b-0 md:border-r border-outline-variant">
+<div class="flex flex-col">
+<span class="font-data-mono text-data-mono text-on-surface">Debit_Credit_Amt</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[12px] mt-xs">e.g. -45.00, 1200.50</span>
+</div>
+<span class="material-symbols-outlined text-outline-variant text-[20px] opacity-0 group-hover:opacity-100 transition-opacity">arrow_forward</span>
+</div>
+<div class="px-md py-md flex items-center bg-surface-bright">
+<div class="relative w-full max-w-[300px]">
+<select class="w-full h-[36px] bg-surface-container-lowest border border-outline-variant rounded px-sm font-body-sm text-body-sm text-on-surface focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 appearance-none outline-none">
+<option disabled="" value="">Select standard field...</option>
+<option value="date">Date</option>
+<option selected="" value="amount">Amount</option>
+<option value="description">Description</option>
+<option value="reference">Reference ID</option>
+<option value="account">Account Number</option>
+</select>
+<span class="material-symbols-outlined absolute right-sm top-1/2 -translate-y-1/2 text-outline-variant pointer-events-none">expand_more</span>
+</div>
+<div class="ml-sm bg-[#F0FDF4] text-[#166534] px-sm py-[2px] rounded-full border border-[#bbf7d0] flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]">check_circle</span>
+<span class="font-label-md text-[10px] uppercase">Mapped</span>
+</div>
+</div>
+</div>
+<!-- Row 3 (Unmapped - Attention) -->
+<div class="grid grid-cols-1 md:grid-cols-2 border-b border-outline-variant hover:bg-surface-container-low transition-colors group">
+<div class="px-md py-md flex items-center justify-between border-b md:border-b-0 md:border-r border-outline-variant">
+<div class="flex flex-col">
+<span class="font-data-mono text-data-mono text-on-surface">Narrative_Text</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[12px] mt-xs">e.g. POS PURCHASE MERCHANT...</span>
+</div>
+<span class="material-symbols-outlined text-outline-variant text-[20px] opacity-0 group-hover:opacity-100 transition-opacity">arrow_forward</span>
+</div>
+<div class="px-md py-md flex items-center bg-[#FFFBEB]/30">
+<div class="relative w-full max-w-[300px]">
+<select class="w-full h-[36px] bg-surface-container-lowest border-2 border-[#92400E]/30 rounded px-sm font-body-sm text-body-sm text-on-surface focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 appearance-none outline-none shadow-sm">
+<option disabled="" selected="" value="">Select standard field...</option>
+<option value="date">Date</option>
+<option value="amount">Amount</option>
+<option value="description">Description</option>
+<option value="reference">Reference ID</option>
+<option value="account">Account Number</option>
+<option value="ignore">-- Ignore Field --</option>
+</select>
+<span class="material-symbols-outlined absolute right-sm top-1/2 -translate-y-1/2 text-outline-variant pointer-events-none">expand_more</span>
+</div>
+<div class="ml-sm bg-[#FFFBEB] text-[#92400E] px-sm py-[2px] rounded-full border border-[#fde68a] flex items-center gap-xs">
+<span class="material-symbols-outlined text-[14px]">warning</span>
+<span class="font-label-md text-[10px] uppercase">Required</span>
+</div>
+</div>
+</div>
+<!-- Row 4 (Ignored) -->
+<div class="grid grid-cols-1 md:grid-cols-2 border-b border-outline-variant hover:bg-surface-container-low transition-colors bg-surface group opacity-75">
+<div class="px-md py-md flex items-center justify-between border-b md:border-b-0 md:border-r border-outline-variant">
+<div class="flex flex-col">
+<span class="font-data-mono text-data-mono text-on-surface line-through">Internal_System_ID</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[12px] mt-xs">e.g. SYS-9982-A</span>
+</div>
+<span class="material-symbols-outlined text-outline-variant text-[20px] opacity-0 group-hover:opacity-100 transition-opacity">arrow_forward</span>
+</div>
+<div class="px-md py-md flex items-center bg-surface-bright">
+<div class="relative w-full max-w-[300px]">
+<select class="w-full h-[36px] bg-surface-container-lowest border border-outline-variant rounded px-sm font-body-sm text-body-sm text-on-surface-variant focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 appearance-none outline-none">
+<option disabled="" value="">Select standard field...</option>
+<option value="date">Date</option>
+<option value="amount">Amount</option>
+<option value="description">Description</option>
+<option value="reference">Reference ID</option>
+<option value="account">Account Number</option>
+<option selected="" value="ignore">-- Ignore Field --</option>
+</select>
+<span class="material-symbols-outlined absolute right-sm top-1/2 -translate-y-1/2 text-outline-variant pointer-events-none">expand_more</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer Actions -->
+<div class="bg-surface-container-lowest px-md py-md flex justify-between items-center border-t border-outline-variant">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Showing 4 columns from Sheet1</span>
+<div class="flex gap-sm">
+<button class="h-[36px] px-md bg-surface-container-lowest text-on-surface border border-outline-variant font-label-md text-label-md rounded flex items-center gap-xs hover:bg-surface-container-low transition-colors">
+                        Reset Mapping
+                    </button>
+<button class="h-[36px] px-md bg-primary-container text-on-primary font-label-md text-label-md rounded flex items-center gap-xs hover:bg-primary transition-colors">
+                        Save Mapping
+                    </button>
+</div>
+</div>
+</div>
+</main>
+</body></html>

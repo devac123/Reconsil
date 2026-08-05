@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Organization Detail - ReconSystem</title>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Config injected from Style Guidance -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error-container": "#93000a",
+                        "outline-variant": "#c3c6d7",
+                        "on-surface-variant": "#434655",
+                        "on-primary-fixed": "#00174b",
+                        "on-background": "#191c1d",
+                        "on-secondary-fixed-variant": "#38485d",
+                        "secondary-container": "#d0e1fb",
+                        "primary-fixed": "#dbe1ff",
+                        "surface-container-highest": "#e1e3e4",
+                        "on-primary": "#ffffff",
+                        "surface-dim": "#d9dadb",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-high": "#e7e8e9",
+                        "on-tertiary-fixed": "#360f00",
+                        "secondary-fixed-dim": "#b7c8e1",
+                        "tertiary-container": "#bc4800",
+                        "on-tertiary-fixed-variant": "#7d2d00",
+                        "on-surface": "#191c1d",
+                        "on-primary-container": "#eeefff",
+                        "on-error": "#ffffff",
+                        "primary-container": "#2563eb",
+                        "inverse-on-surface": "#f0f1f2",
+                        "on-secondary-fixed": "#0b1c30",
+                        "tertiary-fixed": "#ffdbcd",
+                        "surface": "#f8f9fa",
+                        "primary-fixed-dim": "#b4c5ff",
+                        "secondary": "#505f76",
+                        "surface-variant": "#e1e3e4",
+                        "error": "#ba1a1a",
+                        "surface-container": "#edeeef",
+                        "secondary-fixed": "#d3e4fe",
+                        "surface-container-low": "#f3f4f5",
+                        "on-secondary-container": "#54647a",
+                        "background": "#f8f9fa",
+                        "surface-tint": "#0053db",
+                        "inverse-surface": "#2e3132",
+                        "on-tertiary-container": "#ffede6",
+                        "primary": "#004ac6",
+                        "on-secondary": "#ffffff",
+                        "surface-bright": "#f8f9fa",
+                        "outline": "#737686",
+                        "inverse-primary": "#b4c5ff",
+                        "surface-container-lowest": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "tertiary": "#943700",
+                        "on-primary-fixed-variant": "#003ea8",
+                        "tertiary-fixed-dim": "#ffb596"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "sm": "8px",
+                        "xl": "32px",
+                        "md": "16px",
+                        "lg": "24px",
+                        "gutter": "16px",
+                        "base": "8px",
+                        "xs": "4px",
+                        "margin": "24px"
+                    },
+                    "fontFamily": {
+                        "label-md": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "display-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "data-mono": ["JetBrains Mono"],
+                        "title-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "display-sm": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "data-mono": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "title-lg": ["18px", { "lineHeight": "28px", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Base styles */
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.on-surface');
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        /* Table Zebra Striping */
+        .data-table tbody tr:nth-child(even) {
+            background-color: theme('colors.surface');
+        }
+        
+        /* Hide scrollbar for clean horizontal scrolling if needed */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        
+        /* Tab transition */
+        .tab-content {
+            display: none;
+            opacity: 0;
+            transition: opacity 0.2s ease-in-out;
+        }
+        .tab-content.active {
+            display: block;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="font-body-md text-body-md bg-background min-h-screen">
+<!-- TopNavBar (Shared Component) -->
+<header class="fixed top-0 w-full z-50 h-[64px] flex justify-between items-center px-margin max-w-[1440px] mx-auto bg-surface-container-lowest border-b border-outline-variant shadow-none">
+<!-- Brand & Nav Links -->
+<div class="flex items-center gap-xl h-full">
+<div class="font-title-lg text-title-lg font-bold text-primary flex items-center gap-sm">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">dataset</span>
+                ReconSystem
+            </div>
+<nav class="hidden md:flex items-center gap-md h-full pt-[2px]">
+<a class="font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors px-md py-sm rounded-md h-fit active:opacity-80 transition-opacity" href="#">Upload</a>
+<a class="font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors px-md py-sm rounded-md h-fit active:opacity-80 transition-opacity" href="#">Dashboard</a>
+<!-- Active Navigation: Organizations (Contextually active for Org Detail page) -->
+<a class="font-label-md text-label-md text-primary border-b-2 border-primary pb-1 h-full flex items-center px-md" href="#">Organizations</a>
+<a class="font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors px-md py-sm rounded-md h-fit active:opacity-80 transition-opacity" href="#">Uploaded Files</a>
+</nav>
+</div>
+<!-- Trailing Actions & Profile -->
+<div class="flex items-center gap-sm">
+<!-- Search Bar (on_right) -->
+<div class="relative hidden lg:block mr-md">
+<span class="material-symbols-outlined absolute left-sm top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+<input class="h-[36px] pl-[32px] pr-md py-sm bg-surface rounded-lg border border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary-fixed-dim focus:outline-none font-body-sm text-body-sm text-on-surface w-[240px] transition-all placeholder:text-on-surface-variant/70" placeholder="Search..." type="text"/>
+</div>
+<!-- Icons -->
+<button class="p-sm text-on-surface-variant hover:bg-surface-container rounded-full transition-colors flex items-center justify-center h-10 w-10">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-sm text-on-surface-variant hover:bg-surface-container rounded-full transition-colors flex items-center justify-center h-10 w-10">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<button class="p-sm text-on-surface-variant hover:bg-surface-container rounded-full transition-colors flex items-center justify-center h-10 w-10">
+<span class="material-symbols-outlined">help</span>
+</button>
+<!-- Profile Avatar -->
+<button class="ml-sm w-8 h-8 rounded-full overflow-hidden border border-outline-variant hover:opacity-80 transition-opacity">
+<img alt="User profile avatar" class="w-full h-full object-cover" data-alt="A professional headshot of a person looking forward in a bright, modern office setting. The lighting is soft and natural, emphasizing a high-key, clean aesthetic suitable for a B2B software application profile picture." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBHUpznuNqS3fupGkn0C1lv_UyuZvjXPxo7dlwHsHqw4xMFM3EDH0qVNUvmFEH4dqGSe4MDxiruSpgRWk_H9MBnNP8q1rJwcMFwperYBn4tm0HGOOHciRq_y_pyT3-Ns6cR-HRDU1g5yZ1AqZVx2Kv8SFGm60LSUlyGW4NnR3CuPhjEjNZm88mvbroHjojoswcrh0Ps1EsER_nrDzdnMmnYlC4VyHbPSVu-N2iIZYJmmzDp_OqspcRV4Q"/>
+</button>
+</div>
+</header>
+<!-- Main Canvas Area -->
+<main class="mt-[64px] max-w-[1440px] mx-auto px-margin py-lg flex flex-col gap-lg">
+<!-- Breadcrumbs -->
+<div class="flex items-center gap-sm text-on-surface-variant font-label-md text-label-md">
+<a class="hover:text-primary transition-colors" href="#">Organizations</a>
+<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+<span class="text-on-surface">Acme Financial Corp</span>
+</div>
+<!-- Top Section: Organization Info Card -->
+<section class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col gap-md shadow-[0_1px_2px_0_rgba(0,0,0,0.02)]">
+<div class="flex justify-between items-start">
+<div class="flex flex-col gap-xs">
+<div class="flex items-center gap-md">
+<h1 class="font-headline-md text-headline-md text-on-surface">Acme Financial Corp</h1>
+<!-- Status Badge: Match/Active style mapped to secondary-fixed for subtle positive indication -->
+<span class="bg-secondary-fixed text-on-secondary-fixed px-2 py-[2px] rounded border border-secondary-fixed-dim font-label-md text-label-md uppercase tracking-wider flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> Active
+                        </span>
+</div>
+<div class="flex items-center gap-md text-on-surface-variant font-body-sm text-body-sm">
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[16px]">tag</span> Code: <span class="font-data-mono text-data-mono text-on-surface">ACME-FIN-001</span></span>
+<span class="text-outline-variant">|</span>
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[16px]">domain</span> Standard Group</span>
+</div>
+</div>
+<!-- Actions -->
+<div class="flex gap-sm">
+<button class="bg-surface-container-lowest border border-outline-variant text-on-surface font-label-md text-label-md px-md py-sm rounded-lg hover:bg-surface-container transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">edit</span> Edit Details
+                    </button>
+<button class="bg-primary-container text-on-primary font-label-md text-label-md px-md py-sm rounded-lg hover:bg-primary transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">add</span> New Reconciliation
+                    </button>
+</div>
+</div>
+<div class="w-3/4">
+<p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">
+                    Primary entity for North American retail operations. Handles daily transaction feeds from gateway providers and internal ledger reconciliation. Custom mapping rules applied to raw CSV ingestions via SFTP channel A.
+                </p>
+</div>
+</section>
+<!-- Tabbed Interface -->
+<section class="flex flex-col">
+<!-- Tab List -->
+<div class="flex gap-lg border-b border-outline-variant mb-md px-xs">
+<button class="font-label-md text-label-md pb-sm border-b-2 text-primary border-primary transition-colors uppercase" id="tab-btn-uploaded-files" onclick="switchTab('uploaded-files')">
+                    Uploaded Files
+                </button>
+<button class="font-label-md text-label-md pb-sm border-b-2 text-on-surface-variant border-transparent hover:text-on-surface transition-colors uppercase" id="tab-btn-column-mappings" onclick="switchTab('column-mappings')">
+                    Column Mappings
+                </button>
+</div>
+<!-- Tab Content 1: Uploaded Files -->
+<div class="tab-content active flex flex-col gap-md" id="tab-uploaded-files">
+<!-- Table Controls / Filters (Conceptual) -->
+<div class="flex justify-between items-center">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-sm top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">filter_list</span>
+<input class="h-[36px] pl-[32px] pr-md py-sm bg-surface-container-lowest rounded-lg border border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary-fixed-dim focus:outline-none font-body-sm text-body-sm text-on-surface w-[200px]" placeholder="Filter files..." type="text"/>
+</div>
+</div>
+<!-- Table Component -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-[0_1px_2px_0_rgba(0,0,0,0.02)]">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse data-table">
+<thead class="bg-surface border-b border-outline-variant">
+<tr>
+<th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider w-[40%]">Filename</th>
+<th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Upload Date</th>
+<th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Status</th>
+<th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">File Size</th>
+<th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider w-[48px]"></th>
+</tr>
+</thead>
+<tbody>
+<tr class="border-b border-outline-variant/50 hover:bg-surface-container-low transition-colors h-[48px] group">
+<td class="px-md py-sm font-body-sm text-body-sm text-on-surface flex items-center gap-sm">
+<span class="material-symbols-outlined text-outline-variant text-[20px]">csv</span>
+                                        acme_retail_transactions_20231027.csv
+                                    </td>
+<td class="px-md py-sm font-body-sm text-body-sm text-on-surface-variant">Oct 27, 2023 14:32 PST</td>
+<td class="px-md py-sm">
+<!-- Processed Status (Match vibe) -->
+<span class="bg-primary-fixed text-on-primary-fixed px-2 py-[2px] rounded border border-primary-fixed-dim font-label-md text-label-md inline-block">Processed</span>
+</td>
+<td class="px-md py-sm font-data-mono text-data-mono text-on-surface-variant text-right">12.4 MB</td>
+<td class="px-md py-sm text-right">
+<button class="text-on-surface-variant hover:text-primary transition-colors opacity-0 group-hover:opacity-100"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
+</td>
+</tr>
+<tr class="border-b border-outline-variant/50 hover:bg-surface-container-low transition-colors h-[48px] group">
+<td class="px-md py-sm font-body-sm text-body-sm text-on-surface flex items-center gap-sm">
+<span class="material-symbols-outlined text-outline-variant text-[20px]">description</span>
+                                        ledger_extract_Q3_final.xlsx
+                                    </td>
+<td class="px-md py-sm font-body-sm text-body-sm text-on-surface-variant">Oct 26, 2023 09:15 PST</td>
+<td class="px-md py-sm">
+<!-- Error Status -->
+<span class="bg-error-container text-on-error-container px-2 py-[2px] rounded border border-error-container font-label-md text-label-md inline-block">Format Error</span>
+</td>
+<td class="px-md py-sm font-data-mono text-data-mono text-on-surface-variant text-right">4.1 MB</td>
+<td class="px-md py-sm text-right">
+<button class="text-on-surface-variant hover:text-primary transition-colors opacity-0 group-hover:opacity-100"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
+</td>
+</tr>
+<tr class="border-b border-outline-variant/50 hover:bg-surface-container-low transition-colors h-[48px] group">
+<td class="px-md py-sm font-body-sm text-body-sm text-on-surface flex items-center gap-sm">
+<span class="material-symbols-outlined text-outline-variant text-[20px]">csv</span>
+                                        acme_retail_transactions_20231026.csv
+                                    </td>
+<td class="px-md py-sm font-body-sm text-body-sm text-on-surface-variant">Oct 26, 2023 14:30 PST</td>
+<td class="px-md py-sm">
+<span class="bg-primary-fixed text-on-primary-fixed px-2 py-[2px] rounded border border-primary-fixed-dim font-label-md text-label-md inline-block">Processed</span>
+</td>
+<td class="px-md py-sm font-data-mono text-data-mono text-on-surface-variant text-right">11.8 MB</td>
+<td class="px-md py-sm text-right">
+<button class="text-on-surface-variant hover:text-primary transition-colors opacity-0 group-hover:opacity-100"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
+</td>
+</tr>
+<tr class="border-b border-outline-variant/50 hover:bg-surface-container-low transition-colors h-[48px] group">
+<td class="px-md py-sm font-body-sm text-body-sm text-on-surface flex items-center gap-sm">
+<span class="material-symbols-outlined text-outline-variant text-[20px]">csv</span>
+                                        gateway_settlement_batch_992.csv
+                                    </td>
+<td class="px-md py-sm font-body-sm text-body-sm text-on-surface-variant">Oct 25, 2023 23:55 PST</td>
+<td class="px-md py-sm">
+<!-- Pending Status -->
+<span class="bg-surface-container-high text-on-surface-variant px-2 py-[2px] rounded border border-outline-variant font-label-md text-label-md inline-block">Mapping Pending</span>
+</td>
+<td class="px-md py-sm font-data-mono text-data-mono text-on-surface-variant text-right">890 KB</td>
+<td class="px-md py-sm text-right">
+<button class="text-on-surface-variant hover:text-primary transition-colors opacity-0 group-hover:opacity-100"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Pagination (simplified) -->
+<div class="px-md py-sm border-t border-outline-variant bg-surface-container-lowest flex justify-between items-center">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Showing 1 to 4 of 24 entries</span>
+<div class="flex gap-xs">
+<button class="px-sm py-xs border border-outline-variant rounded bg-surface text-on-surface-variant disabled:opacity-50" disabled=""><span class="material-symbols-outlined text-[16px]">chevron_left</span></button>
+<button class="px-sm py-xs border border-outline-variant rounded bg-surface-container-lowest text-on-surface hover:bg-surface-container transition-colors"><span class="material-symbols-outlined text-[16px]">chevron_right</span></button>
+</div>
+</div>
+</div>
+</div>
+<!-- Tab Content 2: Column Mappings -->
+<div class="tab-content flex flex-col gap-md" id="tab-column-mappings">
+<div class="flex justify-between items-center">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Active Mappings</h2>
+<button class="bg-surface-container-lowest border border-outline-variant text-on-surface font-label-md text-label-md px-md py-sm rounded-lg hover:bg-surface-container transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">add</span> New Mapping Rule
+                    </button>
+</div>
+<!-- Bento-style Grid for grouped mappings instead of standard list -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-lg">
+<!-- Mapping Card 1 -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden flex flex-col">
+<div class="bg-surface px-md py-sm border-b border-outline-variant flex justify-between items-center">
+<h3 class="font-label-md text-label-md uppercase text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">table_chart</span>
+                                Sheet: Transactions_Retail
+                            </h3>
+<button class="text-on-surface-variant hover:text-primary"><span class="material-symbols-outlined text-[18px]">edit</span></button>
+</div>
+<div class="p-md flex flex-col gap-sm flex-grow">
+<div class="grid grid-cols-[1fr_24px_1fr] items-center gap-sm p-sm rounded bg-surface-container border border-surface-variant">
+<span class="font-data-mono text-data-mono text-on-surface">trx_id</span>
+<span class="material-symbols-outlined text-outline-variant text-[16px] justify-self-center">arrow_right_alt</span>
+<span class="font-data-mono text-data-mono text-primary font-semibold">TransactionID</span>
+</div>
+<div class="grid grid-cols-[1fr_24px_1fr] items-center gap-sm p-sm rounded bg-surface-container border border-surface-variant">
+<span class="font-data-mono text-data-mono text-on-surface">amount_usd</span>
+<span class="material-symbols-outlined text-outline-variant text-[16px] justify-self-center">arrow_right_alt</span>
+<span class="font-data-mono text-data-mono text-primary font-semibold">BaseAmount</span>
+</div>
+<div class="grid grid-cols-[1fr_24px_1fr] items-center gap-sm p-sm rounded bg-surface-container border border-surface-variant">
+<span class="font-data-mono text-data-mono text-on-surface">date_time</span>
+<span class="material-symbols-outlined text-outline-variant text-[16px] justify-self-center">arrow_right_alt</span>
+<span class="font-data-mono text-data-mono text-primary font-semibold">SettlementDate</span>
+</div>
+</div>
+</div>
+<!-- Mapping Card 2 -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden flex flex-col">
+<div class="bg-surface px-md py-sm border-b border-outline-variant flex justify-between items-center">
+<h3 class="font-label-md text-label-md uppercase text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">table_chart</span>
+                                Sheet: Gateway_Settlement
+                            </h3>
+<button class="text-on-surface-variant hover:text-primary"><span class="material-symbols-outlined text-[18px]">edit</span></button>
+</div>
+<div class="p-md flex flex-col gap-sm flex-grow">
+<div class="grid grid-cols-[1fr_24px_1fr] items-center gap-sm p-sm rounded bg-surface-container border border-surface-variant">
+<span class="font-data-mono text-data-mono text-on-surface">RefNumber</span>
+<span class="material-symbols-outlined text-outline-variant text-[16px] justify-self-center">arrow_right_alt</span>
+<span class="font-data-mono text-data-mono text-primary font-semibold">GatewayRef</span>
+</div>
+<div class="grid grid-cols-[1fr_24px_1fr] items-center gap-sm p-sm rounded bg-surface-container border border-surface-variant">
+<span class="font-data-mono text-data-mono text-on-surface">Net_Amt</span>
+<span class="material-symbols-outlined text-outline-variant text-[16px] justify-self-center">arrow_right_alt</span>
+<span class="font-data-mono text-data-mono text-primary font-semibold">NetAmount</span>
+</div>
+<div class="grid grid-cols-[1fr_24px_1fr] items-center gap-sm p-sm rounded bg-surface-container border border-surface-variant border-dashed">
+<span class="font-data-mono text-data-mono text-on-surface-variant italic">fee_calc</span>
+<span class="material-symbols-outlined text-outline-variant text-[16px] justify-self-center">arrow_right_alt</span>
+<span class="font-data-mono text-data-mono text-on-surface-variant italic">Unmapped</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Simple Tab Switching Logic -->
+<script>
+        function switchTab(tabId) {
+            // Hide all contents
+            document.querySelectorAll('.tab-content').forEach(el => {
+                el.classList.remove('active');
+            });
+            // Reset all buttons
+            document.querySelectorAll('[id^="tab-btn-"]').forEach(el => {
+                el.classList.remove('text-primary', 'border-primary');
+                el.classList.add('text-on-surface-variant', 'border-transparent');
+            });
+
+            // Show target content
+            document.getElementById('tab-' + tabId).classList.add('active');
+            
+            // Highlight active button
+            const activeBtn = document.getElementById('tab-btn-' + tabId);
+            activeBtn.classList.remove('text-on-surface-variant', 'border-transparent');
+            activeBtn.classList.add('text-primary', 'border-primary');
+        }
+    </script>
+</body></html>
