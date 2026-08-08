@@ -112,8 +112,88 @@
     </div>
   </div>
 
-  <!-- ── Sheet Tabs ───────────────────────────────────────────────────────── -->
+  <!-- ── Filter Bar ──────────────────────────────────────────────────────── -->
   {% if sheets %}
+  <div class="bg-surface-container-lowest border border-outline-variant rounded-lg px-md py-md flex flex-col sm:flex-row gap-md items-end">
+
+    <!-- PNR Search -->
+    <div class="flex flex-col gap-xs flex-1 min-w-[140px]">
+      <label class="font-label-md text-label-md text-on-surface-variant uppercase text-[10px]">PNR</label>
+      <div class="relative">
+        <span class="material-symbols-outlined absolute left-sm top-1/2 -translate-y-1/2 text-outline text-[16px]">search</span>
+        <input id="filter-pnr" type="text" placeholder="e.g. KTCKMP"
+               class="w-full h-[36px] pl-[32px] pr-sm border border-outline-variant rounded
+                      font-body-sm text-body-sm text-on-surface bg-surface
+                      focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"/>
+      </div>
+    </div>
+
+    <!-- Ticket Number -->
+    <div class="flex flex-col gap-xs flex-1 min-w-[140px]">
+      <label class="font-label-md text-label-md text-on-surface-variant uppercase text-[10px]">Ticket Number</label>
+      <div class="relative">
+        <span class="material-symbols-outlined absolute left-sm top-1/2 -translate-y-1/2 text-outline text-[16px]">confirmation_number</span>
+        <input id="filter-ticket" type="text" placeholder="e.g. 2283072..."
+               class="w-full h-[36px] pl-[32px] pr-sm border border-outline-variant rounded
+                      font-body-sm text-body-sm text-on-surface bg-surface
+                      focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"/>
+      </div>
+    </div>
+
+    <!-- Date From -->
+    <div class="flex flex-col gap-xs min-w-[140px]">
+      <label class="font-label-md text-label-md text-on-surface-variant uppercase text-[10px]">Date From</label>
+      <input id="filter-date-from" type="date"
+             class="h-[36px] px-sm border border-outline-variant rounded
+                    font-body-sm text-body-sm text-on-surface bg-surface
+                    focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"/>
+    </div>
+
+    <!-- Date To -->
+    <div class="flex flex-col gap-xs min-w-[140px]">
+      <label class="font-label-md text-label-md text-on-surface-variant uppercase text-[10px]">Date To</label>
+      <input id="filter-date-to" type="date"
+             class="h-[36px] px-sm border border-outline-variant rounded
+                    font-body-sm text-body-sm text-on-surface bg-surface
+                    focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"/>
+    </div>
+
+    <!-- Processed Status -->
+    <div class="flex flex-col gap-xs min-w-[120px]">
+      <label class="font-label-md text-label-md text-on-surface-variant uppercase text-[10px]">Status</label>
+      <select id="filter-processed"
+              class="h-[36px] px-sm border border-outline-variant rounded
+                     font-body-sm text-body-sm text-on-surface bg-surface
+                     focus:outline-none focus:border-primary">
+        <option value="">All</option>
+        <option value="false">Unprocessed</option>
+        <option value="true">Processed</option>
+      </select>
+    </div>
+
+    <!-- Buttons -->
+    <div class="flex gap-sm flex-shrink-0">
+      <button onclick="applyFilters()"
+              class="h-[36px] px-md bg-primary text-on-primary font-label-md text-label-md
+                     rounded hover:bg-on-primary-fixed-variant transition-colors flex items-center gap-xs">
+        <span class="material-symbols-outlined text-[16px]">filter_alt</span>
+        Apply
+      </button>
+      <button onclick="clearFilters()"
+              class="h-[36px] px-sm border border-outline-variant text-on-surface-variant
+                     font-label-md text-label-md rounded hover:bg-surface-container
+                     transition-colors flex items-center gap-xs">
+        <span class="material-symbols-outlined text-[16px]">close</span>
+        Clear
+      </button>
+    </div>
+
+  </div>
+
+  <!-- Active filter tags (shown when filters are applied) -->
+  <div id="active-filters" class="hidden flex flex-wrap gap-xs"></div>
+
+  <!-- ── Sheet Tabs ───────────────────────────────────────────────────────── -->
   <div class="flex flex-col gap-md">
 
     <!-- Tab Button Row -->
@@ -256,8 +336,110 @@
     totalRows:  {{ sheet.total_rows }},
     totalPages: 1,
     loaded:     false,
+    filters: { pnr: '', ticket: '', dateFrom: '', dateTo: '', isProcessed: '' },
   };
   {% endfor %}
+
+  // ── Filters ────────────────────────────────────────────────────────────────
+  function getActiveSheetId() {
+    const active = document.querySelector('.sheet-panel.active');
+    return active ? parseInt(active.id.replace('sheet-panel-', '')) : null;
+  }
+
+  function applyFilters() {
+    const pnr         = document.getElementById('filter-pnr').value.trim();
+    const ticket      = document.getElementById('filter-ticket').value.trim();
+    const dateFrom    = document.getElementById('filter-date-from').value;
+    const dateTo      = document.getElementById('filter-date-to').value;
+    const isProcessed = document.getElementById('filter-processed').value;
+
+    // Validate date range only if both are provided
+    if (dateFrom && dateTo && dateFrom > dateTo) {
+      showFilterError('"Date From" cannot be after "Date To".');
+      return;
+    }
+
+    clearFilterError();
+
+    // Apply to ALL sheets
+    Object.keys(state).forEach(id => {
+      state[id].filters = { pnr, ticket, dateFrom, dateTo, isProcessed };
+      state[id].page    = 1;
+      state[id].loaded  = false;
+    });
+
+    const sheetId = getActiveSheetId();
+    if (sheetId) loadSheetData(sheetId);
+
+    renderFilterTags({ pnr, ticket, dateFrom, dateTo, isProcessed });
+  }
+
+  function clearFilters() {
+    document.getElementById('filter-pnr').value        = '';
+    document.getElementById('filter-ticket').value     = '';
+    document.getElementById('filter-date-from').value  = '';
+    document.getElementById('filter-date-to').value    = '';
+    document.getElementById('filter-processed').value  = '';
+    clearFilterError();
+
+    Object.keys(state).forEach(id => {
+      state[id].filters = { pnr: '', ticket: '', dateFrom: '', dateTo: '', isProcessed: '' };
+      state[id].page    = 1;
+      state[id].loaded  = false;
+    });
+
+    const sheetId = getActiveSheetId();
+    if (sheetId) loadSheetData(sheetId);
+
+    document.getElementById('active-filters').classList.add('hidden');
+    document.getElementById('active-filters').innerHTML = '';
+  }
+
+  function showFilterError(msg) {
+    let el = document.getElementById('filter-error');
+    if (!el) {
+      el = document.createElement('p');
+      el.id = 'filter-error';
+      el.className = 'font-body-sm text-body-sm text-error flex items-center gap-xs mt-xs';
+      document.getElementById('active-filters').before(el);
+    }
+    el.innerHTML = `<span class="material-symbols-outlined text-[14px]">error</span> ${msg}`;
+    el.classList.remove('hidden');
+  }
+
+  function clearFilterError() {
+    const el = document.getElementById('filter-error');
+    if (el) el.classList.add('hidden');
+  }
+
+  function renderFilterTags(filters) {
+    const container = document.getElementById('active-filters');
+    const tags = [];
+    if (filters.pnr)                   tags.push(`PNR: <b>${escapeHtml(filters.pnr)}</b>`);
+    if (filters.ticket)                tags.push(`Ticket: <b>${escapeHtml(filters.ticket)}</b>`);
+    if (filters.dateFrom)              tags.push(`From: <b>${filters.dateFrom}</b>`);
+    if (filters.dateTo)                tags.push(`To: <b>${filters.dateTo}</b>`);
+    if (filters.isProcessed !== '')    tags.push(`Status: <b>${filters.isProcessed === 'true' ? 'Processed' : 'Unprocessed'}</b>`);
+
+    if (!tags.length) {
+      container.classList.add('hidden');
+      container.innerHTML = '';
+      return;
+    }
+
+    container.classList.remove('hidden');
+    container.innerHTML = tags.map(t =>
+      `<span class="inline-flex items-center gap-xs px-sm py-[2px] bg-primary/10 text-primary
+                    border border-primary/20 rounded-full font-body-sm text-[11px]">${t}</span>`
+    ).join('');
+  }
+
+  // Enter key triggers apply
+  ['filter-pnr','filter-ticket','filter-date-from','filter-date-to'].forEach(id => {
+    document.getElementById(id)?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') applyFilters();
+    });
+  });
 
   // ── Tab switching ──────────────────────────────────────────────────────────
   function switchSheet(sheetId) {
@@ -309,7 +491,18 @@
       </tr>`;
 
     try {
-      const url = `/files/${FILE_ID}/sheets-data/${sheetId}?page=${s.page}&page_size=${s.pageSize}`;
+      // Build URL with filters
+      const params = new URLSearchParams({
+        page:      s.page,
+        page_size: s.pageSize,
+      });
+      if (s.filters.pnr)          params.append('pnr',          s.filters.pnr);
+      if (s.filters.ticket)       params.append('ticket_number', s.filters.ticket);
+      if (s.filters.dateFrom)     params.append('date_from',     s.filters.dateFrom);
+      if (s.filters.dateTo)       params.append('date_to',       s.filters.dateTo);
+      if (s.filters.isProcessed !== '') params.append('is_processed', s.filters.isProcessed);
+
+      const url  = `/files/${FILE_ID}/sheets-data/${sheetId}?${params.toString()}`;
       const resp = await fetch(url);
 
       if (!resp.ok) {

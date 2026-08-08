@@ -81,6 +81,11 @@ _SHEET_FIELD_MAP: dict[str, dict[str, str | None]] = {
         "ticket_number":    "TicketNumbers",
         "transaction_date": "Refund Date and Time",
     },
+    "reconcilation": {
+        "pnr":              "PNR",
+        "ticket_number":    None,
+        "transaction_date": None,
+    },
 }
 
 _DEFAULT_FIELD_MAP: dict[str, str | None] = {

@@ -15,13 +15,15 @@ GET  /files/{uploaded_file_id}/reconcile/download
 
 import io
 import logging
+from typing import Optional
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from fastapi import APIRouter, Depends, HTTPException, Path, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
@@ -85,6 +87,172 @@ def run_reconciliation(
         "status":           "completed",
         "reconciled_rows":  total_rows,
         "message":          f"Reconciliation complete. {total_rows} PNR rows produced.",
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /files/{id}/reconcile/results  — filtered, paginated JSON query
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get(
+    "/{uploaded_file_id}/reconcile/results",
+    status_code=status.HTTP_200_OK,
+    summary="Query reconciliation results with filters",
+    description=(
+        "Returns a paginated list of reconciled PNR rows. "
+        "Supports filtering by PNR, remark, and variance range."
+    ),
+)
+def get_reconciliation_results(
+    uploaded_file_id: int = Path(..., gt=0),
+    # ── Filters ────────────────────────────────────────────────────────
+    pnr: Optional[str] = Query(
+        None,
+        description="Filter by PNR (case-insensitive partial match).",
+        examples=["KTCKMP"],
+    ),
+    remark: Optional[str] = Query(
+        None,
+        description=(
+            "Filter by remark (exact match). "
+            "e.g. Matched, Variance, Not in Cost, Not in CASH X, Not in SPYJ, "
+            "Markup/Booking Charges"
+        ),
+    ),
+    variance_min: Optional[float] = Query(
+        None,
+        description="Minimum variance value (inclusive).",
+    ),
+    variance_max: Optional[float] = Query(
+        None,
+        description="Maximum variance value (inclusive).",
+    ),
+    # ── Pagination ─────────────────────────────────────────────────────
+    page: int = Query(1, ge=1, description="Page number (1-based)."),
+    page_size: int = Query(50, ge=1, le=500, description="Rows per page (max 500)."),
+    db: Session = Depends(get_db),
+):
+    _get_file_or_404(uploaded_file_id, db)
+
+    q = db.query(ReconciliationResult).filter(
+        ReconciliationResult.uploaded_file_id == uploaded_file_id
+    )
+
+    # ── Apply filters ──────────────────────────────────────────────────
+    if pnr:
+        q = q.filter(ReconciliationResult.pnr.ilike(f"%{pnr}%"))
+
+    if remark:
+        q = q.filter(ReconciliationResult.remark == remark)
+
+    if variance_min is not None:
+        q = q.filter(ReconciliationResult.variance >= variance_min)
+
+    if variance_max is not None:
+        q = q.filter(ReconciliationResult.variance <= variance_max)
+
+    total = q.count()
+
+    # ── Pagination ─────────────────────────────────────────────────────
+    offset  = (page - 1) * page_size
+    records = q.order_by(ReconciliationResult.pnr).offset(offset).limit(page_size).all()
+
+    return {
+        "uploaded_file_id": uploaded_file_id,
+        "total":            total,
+        "page":             page,
+        "page_size":        page_size,
+        "total_pages":      -(-total // page_size),  # ceiling division
+        "filters": {
+            "pnr":          pnr,
+            "remark":       remark,
+            "variance_min": variance_min,
+            "variance_max": variance_max,
+        },
+        "results": [
+            {
+                "id":             r.id,
+                "pnr":            r.pnr,
+                "cost_pnr":       r.cost_pnr,
+                "cost_sale":      r.cost_sale,
+                "cost_refund":    r.cost_refund,
+                "cost_net":       r.cost_net,
+                "cashx_pnr":      r.cashx_pnr,
+                "cashx_amount":   r.cashx_amount,
+                "cashx_refund":   r.cashx_refund,
+                "cashx_net":      r.cashx_net,
+                "spyj_pnr":       r.spyj_pnr,
+                "spyj_amount":    r.spyj_amount,
+                "spyj_refund":    r.spyj_refund,
+                "spyj_net":       r.spyj_net,
+                "variance":       r.variance,
+                "remark":         r.remark,
+                "revised_remark": r.revised_remark,
+                "final_remark":   r.final_remark,
+            }
+            for r in records
+        ],
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /files/{id}/reconcile/summary  — counts per remark
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get(
+    "/{uploaded_file_id}/reconcile/summary",
+    status_code=status.HTTP_200_OK,
+    summary="Reconciliation summary — counts and totals per remark",
+    description=(
+        "Returns the total PNR count, variance totals, and a breakdown "
+        "of how many rows fall under each remark category."
+    ),
+)
+def get_reconciliation_summary(
+    uploaded_file_id: int = Path(..., gt=0),
+    db: Session = Depends(get_db),
+):
+    _get_file_or_404(uploaded_file_id, db)
+
+    # Total rows + overall variance sum
+    totals = db.query(
+        func.count(ReconciliationResult.id).label("total_pnrs"),
+        func.sum(ReconciliationResult.variance).label("total_variance"),
+        func.sum(ReconciliationResult.cost_net).label("total_cost_net"),
+        func.sum(ReconciliationResult.cashx_net).label("total_cashx_net"),
+        func.sum(ReconciliationResult.spyj_net).label("total_spyj_net"),
+    ).filter(
+        ReconciliationResult.uploaded_file_id == uploaded_file_id
+    ).one()
+
+    # Count + variance sum per remark
+    remark_rows = db.query(
+        ReconciliationResult.remark,
+        func.count(ReconciliationResult.id).label("count"),
+        func.sum(ReconciliationResult.variance).label("variance_total"),
+    ).filter(
+        ReconciliationResult.uploaded_file_id == uploaded_file_id
+    ).group_by(
+        ReconciliationResult.remark
+    ).order_by(
+        func.count(ReconciliationResult.id).desc()
+    ).all()
+
+    return {
+        "uploaded_file_id": uploaded_file_id,
+        "total_pnrs":       totals.total_pnrs or 0,
+        "total_variance":   round(totals.total_variance or 0, 2),
+        "total_cost_net":   round(totals.total_cost_net or 0, 2),
+        "total_cashx_net":  round(totals.total_cashx_net or 0, 2),
+        "total_spyj_net":   round(totals.total_spyj_net or 0, 2),
+        "by_remark": [
+            {
+                "remark":          row.remark or "Unassigned",
+                "count":           row.count,
+                "variance_total":  round(row.variance_total or 0, 2),
+            }
+            for row in remark_rows
+        ],
     }
 
 
