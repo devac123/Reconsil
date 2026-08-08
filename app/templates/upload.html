@@ -6,6 +6,18 @@
 input[type="file"]::file-selector-button { display: none; }
 .upload-zone { transition: all 0.2s ease-in-out; }
 .upload-zone.dragover { border-color: #2563EB; background-color: #eff6ff; }
+
+/* Progress bar animation */
+@keyframes progress-shine {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+#progress-fill {
+  background: linear-gradient(90deg, #2563EB 0%, #60A5FA 50%, #2563EB 100%);
+  background-size: 200% auto;
+  animation: progress-shine 1.6s linear infinite;
+  transition: width 0.4s ease;
+}
 {% endblock %}
 
 {% block content %}
@@ -73,8 +85,45 @@ input[type="file"]::file-selector-button { display: none; }
     </div>
   </div>
 
-  <!-- Result Area (shown after upload) -->
+  <!-- ── Progress Card (shown while ingesting) ───────────────────────────── -->
+  <div id="progress-card"
+       class="hidden w-full max-w-2xl mt-xl bg-surface-container-lowest border border-outline-variant
+              rounded-lg p-lg shadow-sm">
+
+    <div class="flex items-center gap-sm mb-md">
+      <span id="progress-icon"
+            class="material-symbols-outlined text-primary animate-spin"
+            style="font-variation-settings:'FILL' 1">sync</span>
+      <h3 class="font-headline-sm text-headline-sm text-on-surface">Processing File…</h3>
+    </div>
+
+    <!-- Bar -->
+    <div class="w-full bg-surface-variant rounded-full h-3 overflow-hidden mb-sm">
+      <div id="progress-fill" class="h-3 rounded-full" style="width: 0%"></div>
+    </div>
+
+    <!-- Labels row -->
+    <div class="flex justify-between items-center">
+      <p id="progress-message"
+         class="font-body-sm text-body-sm text-on-surface-variant truncate max-w-[80%]">
+        Waiting to start…
+      </p>
+      <p id="progress-percent"
+         class="font-data-mono text-data-mono text-on-surface text-[13px] font-semibold whitespace-nowrap ml-sm">
+        0%
+      </p>
+    </div>
+
+    <!-- Row counter -->
+    <p id="progress-rows"
+       class="font-body-sm text-body-sm text-outline text-[11px] mt-xs">
+      0 / 0 rows
+    </p>
+  </div>
+
+  <!-- ── Result Area (shown after upload) ───────────────────────────────── -->
   <div id="result-area" class="w-full max-w-2xl mt-xl hidden">
+
     <!-- Success -->
     <div id="result-success"
          class="hidden bg-surface-container-lowest border border-outline-variant rounded-lg p-lg">
@@ -130,25 +179,36 @@ input[type="file"]::file-selector-button { display: none; }
         </div>
       </div>
     </div>
-  </div>
+
+  </div><!-- /result-area -->
 
 </main>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  const dropZone      = document.getElementById('drop-zone');
-  const fileInput     = document.getElementById('file-upload');
-  const selectedState = document.getElementById('selected-file-state');
-  const filenameDisp  = document.getElementById('filename-display');
-  const filesizeDisp  = document.getElementById('filesize-display');
-  const removeBtn     = document.getElementById('remove-file-btn');
-  const startBtn      = document.getElementById('start-upload-btn');
-  const resultArea    = document.getElementById('result-area');
-  const resultSuccess = document.getElementById('result-success');
-  const resultError   = document.getElementById('result-error');
+  // ── DOM refs ────────────────────────────────────────────────────────────
+  const dropZone       = document.getElementById('drop-zone');
+  const fileInput      = document.getElementById('file-upload');
+  const selectedState  = document.getElementById('selected-file-state');
+  const filenameDisp   = document.getElementById('filename-display');
+  const filesizeDisp   = document.getElementById('filesize-display');
+  const removeBtn      = document.getElementById('remove-file-btn');
+  const startBtn       = document.getElementById('start-upload-btn');
+  const resultArea     = document.getElementById('result-area');
+  const resultSuccess  = document.getElementById('result-success');
+  const resultError    = document.getElementById('result-error');
+
+  // Progress card
+  const progressCard   = document.getElementById('progress-card');
+  const progressFill   = document.getElementById('progress-fill');
+  const progressMsg    = document.getElementById('progress-message');
+  const progressPct    = document.getElementById('progress-percent');
+  const progressRows   = document.getElementById('progress-rows');
+  const progressIcon   = document.getElementById('progress-icon');
 
   let selectedFile = null;
+  let activeSSE    = null;   // holds the EventSource so we can close it
 
   // ── Drag & Drop ──────────────────────────────────────────────────────────
   ['dragenter','dragover','dragleave','drop'].forEach(ev =>
@@ -164,7 +224,7 @@ input[type="file"]::file-selector-button { display: none; }
   fileInput.addEventListener('change', function() { handleFiles(this.files); });
 
   function formatBytes(bytes) {
-    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024)    return bytes + ' B';
     if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / 1048576).toFixed(1) + ' MB';
   }
@@ -187,58 +247,156 @@ input[type="file"]::file-selector-button { display: none; }
     resultArea.classList.add('hidden');
     resultSuccess.classList.add('hidden');
     resultError.classList.add('hidden');
+    progressCard.classList.add('hidden');
   }
 
   removeBtn.addEventListener('click', () => {
     fileInput.value = '';
-    selectedFile = null;
+    selectedFile    = null;
     selectedState.classList.add('hidden');
     startBtn.disabled = true;
     dropZone.style.display = '';
+    progressCard.classList.add('hidden');
   });
+
+  // ── Progress helpers ─────────────────────────────────────────────────────
+  function showProgress(message = 'Waiting to start…', percent = 0) {
+    progressCard.classList.remove('hidden');
+    setProgress(percent, 0, 0, message);
+  }
+
+  function setProgress(percent, rowsDone, totalRows, message) {
+    progressFill.style.width = percent + '%';
+    progressPct.textContent  = percent + '%';
+    progressMsg.textContent  = message || '';
+    progressRows.textContent =
+      totalRows > 0
+        ? rowsDone.toLocaleString() + ' / ' + totalRows.toLocaleString() + ' rows'
+        : '';
+  }
+
+  function markProgressDone() {
+    progressFill.style.width = '100%';
+    progressPct.textContent  = '100%';
+    // Stop the shimmer, show solid green
+    progressFill.style.animation = 'none';
+    progressFill.style.background = '#16A34A';
+    progressIcon.classList.remove('animate-spin');
+    progressIcon.textContent = 'check_circle';
+    progressIcon.classList.remove('text-primary');
+    progressIcon.classList.add('text-[#16A34A]');
+    progressMsg.textContent = 'Import complete!';
+  }
+
+  function markProgressFailed(errorMsg) {
+    progressFill.style.animation = 'none';
+    progressFill.style.background = '#DC2626';
+    progressIcon.classList.remove('animate-spin');
+    progressIcon.textContent = 'error';
+    progressIcon.classList.remove('text-primary');
+    progressIcon.classList.add('text-[#DC2626]');
+    progressMsg.textContent = 'Failed: ' + (errorMsg || 'Unknown error');
+  }
 
   // ── Upload ───────────────────────────────────────────────────────────────
   startBtn.addEventListener('click', async () => {
     if (!selectedFile) return;
 
+    // Close any previous SSE stream
+    if (activeSSE) { activeSSE.close(); activeSSE = null; }
+
     startBtn.disabled = true;
     startBtn.textContent = 'Uploading…';
+    resultArea.classList.add('hidden');
+    resultSuccess.classList.add('hidden');
+    resultError.classList.add('hidden');
+
+    showProgress('Uploading file…', 0);
 
     const formData = new FormData();
     formData.append('file', selectedFile);
 
+    let jobId;
     try {
-      const resp   = await fetch('/files/upload', { method: 'POST', body: formData });
-      const result = await resp.json();
-
+      const resp = await fetch('/files/upload-async', { method: 'POST', body: formData });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        throw new Error(body.detail || 'Upload request failed.');
+      }
+      const data = await resp.json();
+      jobId = data.job_id;
+    } catch (err) {
+      markProgressFailed(err.message);
       resultArea.classList.remove('hidden');
+      document.getElementById('error-message').textContent = err.message;
+      resultError.classList.remove('hidden');
+      startBtn.disabled = false;
+      startBtn.textContent = 'Start Upload';
+      return;
+    }
 
-      if (resp.ok) {
-        document.getElementById('res-org').textContent     = result.organization;
-        document.getElementById('res-file-id').textContent = result.uploaded_file_id;
-        document.getElementById('res-sheets').textContent  = result.total_sheets;
-        document.getElementById('res-rows').textContent    = result.total_rows_imported.toLocaleString();
+    startBtn.textContent = 'Processing…';
+
+    // ── Open SSE stream ──────────────────────────────────────────────────
+    activeSSE = new EventSource(`/files/progress/${jobId}`);
+
+    activeSSE.onmessage = function(event) {
+      let job;
+      try { job = JSON.parse(event.data); } catch { return; }
+
+      setProgress(
+        job.percent    || 0,
+        job.rows_done  || 0,
+        job.total_rows || 0,
+        job.message    || '',
+      );
+
+      if (job.status === 'done') {
+        activeSSE.close();
+        activeSSE = null;
+        markProgressDone();
+
+        // Show success card
+        const r = job.result || {};
+        document.getElementById('res-org').textContent     = r.organization      || '—';
+        document.getElementById('res-file-id').textContent = r.uploaded_file_id  || '—';
+        document.getElementById('res-sheets').textContent  = r.total_sheets      || '—';
+        document.getElementById('res-rows').textContent    = (r.total_rows_imported || 0).toLocaleString();
         document.getElementById('res-mapping-link').href   =
-            `/file-mapping-ui/${result.uploaded_file_id}`;
+            r.uploaded_file_id ? `/file-mapping-ui/${r.uploaded_file_id}` : '#';
+
+        resultArea.classList.remove('hidden');
         resultSuccess.classList.remove('hidden');
         resultError.classList.add('hidden');
-      } else {
+        startBtn.disabled    = false;
+        startBtn.textContent = 'Start Upload';
+      }
+
+      if (job.status === 'failed') {
+        activeSSE.close();
+        activeSSE = null;
+        markProgressFailed(job.error || job.message);
+
         document.getElementById('error-message').textContent =
-            result.detail || 'An unknown error occurred.';
+            job.error || job.message || 'An unknown error occurred.';
+        resultArea.classList.remove('hidden');
         resultError.classList.remove('hidden');
         resultSuccess.classList.add('hidden');
-        startBtn.disabled = false;
+        startBtn.disabled    = false;
+        startBtn.textContent = 'Start Upload';
       }
-    } catch (err) {
+    };
+
+    activeSSE.onerror = function() {
+      activeSSE.close();
+      activeSSE = null;
+      markProgressFailed('Lost connection to server.');
+      document.getElementById('error-message').textContent = 'Lost connection to server.';
       resultArea.classList.remove('hidden');
-      document.getElementById('error-message').textContent =
-          'Unable to connect to the server.';
       resultError.classList.remove('hidden');
-      resultSuccess.classList.add('hidden');
-      startBtn.disabled = false;
-    } finally {
+      startBtn.disabled    = false;
       startBtn.textContent = 'Start Upload';
-    }
+    };
   });
 </script>
 {% endblock %}
