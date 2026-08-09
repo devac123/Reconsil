@@ -126,11 +126,7 @@
                    class="text-primary font-label-md text-label-md hover:underline flex items-center gap-xs">
                   <span class="material-symbols-outlined text-[14px]">table_chart</span>View Data
                 </a>
-                {% if f.upload_status.value == 'UPLOADED' %}
-                  <span class="text-outline-variant">·</span>
-                  <a href="/file-mapping-ui/{{ f.id }}"
-                     class="text-secondary font-label-md text-label-md hover:underline">Map</a>
-                {% elif f.upload_status.value == 'PROCESSED' %}
+                {% if f.upload_status.value == 'PROCESSED' %}
                   <span class="text-outline-variant">·</span>
                   <a href="/processing-result/{{ f.id }}"
                      class="text-secondary font-label-md text-label-md hover:underline">Result</a>

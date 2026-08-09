@@ -195,10 +195,7 @@
               {% endif %}
             </td>
             <td class="px-md py-sm text-right">
-              {% if f.upload_status.value == 'UPLOADED' %}
-                <a href="/file-mapping-ui/{{ f.id }}"
-                   class="text-primary-container font-label-md text-label-md hover:underline">Map</a>
-              {% elif f.upload_status.value == 'PROCESSED' %}
+              {% if f.upload_status.value == 'PROCESSED' %}
                 <a href="/organizations/{{ f.organization_id }}"
                    class="text-secondary font-label-md text-label-md hover:underline">View</a>
               {% else %}

@@ -152,17 +152,11 @@ input[type="file"]::file-selector-button { display: none; }
         </div>
       </div>
       <div class="flex gap-sm">
-        <a id="res-mapping-link" href="#"
+        <a href="/uploaded-files"
            class="bg-primary text-on-primary font-label-md text-label-md px-lg py-[10px] rounded
                   hover:bg-on-primary-fixed-variant transition-colors flex items-center gap-xs">
-          Map Columns
-          <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
-        </a>
-        <a href="/uploaded-files"
-           class="bg-surface-container-lowest text-on-surface border border-outline-variant
-                  font-label-md text-label-md px-lg py-[10px] rounded
-                  hover:bg-surface-container transition-colors">
           View All Files
+          <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
         </a>
       </div>
     </div>
@@ -362,8 +356,6 @@ input[type="file"]::file-selector-button { display: none; }
         document.getElementById('res-file-id').textContent = r.uploaded_file_id  || '—';
         document.getElementById('res-sheets').textContent  = r.total_sheets      || '—';
         document.getElementById('res-rows').textContent    = (r.total_rows_imported || 0).toLocaleString();
-        document.getElementById('res-mapping-link').href   =
-            r.uploaded_file_id ? `/file-mapping-ui/${r.uploaded_file_id}` : '#';
 
         resultArea.classList.remove('hidden');
         resultSuccess.classList.remove('hidden');

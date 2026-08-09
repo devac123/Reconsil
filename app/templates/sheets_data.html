@@ -59,20 +59,13 @@
 
     <!-- Actions -->
     <div class="flex gap-sm flex-wrap">
-      <a href="/file-mapping-ui/{{ uploaded_file.id }}"
-         class="h-[36px] px-md bg-surface-container-lowest border border-outline-variant
-                text-on-surface font-label-md text-label-md rounded
-                hover:bg-surface-container transition-colors flex items-center gap-xs">
-        <span class="material-symbols-outlined text-[18px]">schema</span>
-        Map Columns
-      </a>
       {% if uploaded_file.upload_status.value == 'PROCESSED' %}
       <a href="/processing-result/{{ uploaded_file.id }}"
          class="h-[36px] px-md bg-primary-container text-on-primary
                 font-label-md text-label-md rounded
                 hover:opacity-90 transition-opacity flex items-center gap-xs">
         <span class="material-symbols-outlined text-[18px]">receipt_long</span>
-        View Transactions
+        View Result
       </a>
       {% endif %}
     </div>
@@ -216,6 +209,18 @@
         </span>
       </button>
       {% endfor %}
+
+      <!-- Reconciliation Tab -->
+      <button
+        id="tab-btn-reconciliation"
+        onclick="switchToReconciliation()"
+        class="sheet-tab-btn px-md py-sm font-label-md text-label-md rounded-t border border-b-0
+               transition-colors flex items-center gap-xs
+               bg-surface-container border-transparent text-on-surface-variant hover:text-on-surface">
+        <span class="material-symbols-outlined text-[16px]">balance</span>
+        Reconciliation
+      </button>
+      
     </div>
 
     <!-- Tab Content Panels -->
@@ -306,6 +311,120 @@
 
     </div>
     {% endfor %}
+
+    <!-- ── Reconciliation Panel ─────────────────────────────────────────── -->
+    <div id="sheet-panel-reconciliation"
+         class="sheet-panel flex flex-col gap-md">
+
+      <!-- Toolbar -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-sm
+                  bg-surface border border-outline-variant rounded-lg px-md py-sm">
+        <div class="flex items-center gap-md flex-wrap font-body-sm text-body-sm text-on-surface-variant">
+          <span class="flex items-center gap-xs">
+            <span class="material-symbols-outlined text-[16px]">balance</span>
+            Reconciliation Results
+          </span>
+          <span id="recon-total-badge" class="text-outline-variant font-data-mono text-data-mono text-[12px]">—</span>
+        </div>
+        <div class="flex items-center gap-sm flex-wrap">
+          <!-- Remark filter -->
+          <select id="recon-filter-remark"
+                  class="h-[32px] px-sm border border-outline-variant rounded bg-surface
+                         font-body-sm text-body-sm text-on-surface focus:outline-none focus:border-primary">
+            <option value="">All Remarks</option>
+            <option value="Matched">Matched</option>
+            <option value="Variance">Variance</option>
+            <option value="Not in Cost">Not in Cost</option>
+            <option value="Not in CASH X">Not in CASH X</option>
+            <option value="Not in SPYJ">Not in SPYJ</option>
+            <option value="Markup/Booking Charges">Markup/Booking Charges</option>
+          </select>
+          <!-- PNR search -->
+          <div class="relative">
+            <span class="material-symbols-outlined absolute left-sm top-1/2 -translate-y-1/2 text-outline text-[14px]">search</span>
+            <input id="recon-filter-pnr" type="text" placeholder="PNR…"
+                   class="h-[32px] pl-[28px] pr-sm border border-outline-variant rounded
+                          font-body-sm text-body-sm text-on-surface bg-surface w-[120px]
+                          focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"/>
+          </div>
+          <button onclick="loadReconciliationData(1)"
+                  class="h-[32px] px-md bg-primary text-on-primary font-label-md text-label-md
+                         rounded hover:bg-on-primary-fixed-variant transition-colors flex items-center gap-xs">
+            <span class="material-symbols-outlined text-[14px]">filter_alt</span>
+            Filter
+          </button>
+          <!-- Run Reconciliation -->
+          <button onclick="runReconciliation()"
+                  id="recon-run-btn"
+                  class="h-[32px] px-md bg-tertiary text-on-tertiary font-label-md text-label-md
+                         rounded hover:opacity-90 transition-opacity flex items-center gap-xs">
+            <span class="material-symbols-outlined text-[14px]">play_arrow</span>
+            Run
+          </button>
+          <!-- Download -->
+          <a href="/files/{{ uploaded_file.id }}/reconcile/download"
+             class="h-[32px] px-md bg-surface-container-lowest border border-outline-variant
+                    text-on-surface font-label-md text-label-md rounded
+                    hover:bg-surface-container transition-colors flex items-center gap-xs">
+            <span class="material-symbols-outlined text-[14px]">download</span>
+            Download
+          </a>
+        </div>
+      </div>
+
+      <!-- Summary chips -->
+      <div id="recon-summary" class="hidden flex flex-wrap gap-sm"></div>
+
+      <!-- Pagination controls -->
+      <div class="flex items-center justify-between gap-sm">
+        <span id="recon-page-info" class="font-body-sm text-body-sm text-on-surface-variant"></span>
+        <div class="flex items-center gap-sm">
+          <button onclick="loadReconciliationData(reconState.page - 1)"
+                  id="recon-prev-btn"
+                  class="w-[32px] h-[32px] rounded border border-outline-variant flex items-center justify-center
+                         text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-40"
+                  disabled>
+            <span class="material-symbols-outlined text-[18px]">chevron_left</span>
+          </button>
+          <button onclick="loadReconciliationData(reconState.page + 1)"
+                  id="recon-next-btn"
+                  class="w-[32px] h-[32px] rounded border border-outline-variant flex items-center justify-center
+                         text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-40">
+            <span class="material-symbols-outlined text-[18px]">chevron_right</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Results Table -->
+      <div class="bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden shadow-sm">
+        <div class="table-scroll overflow-x-auto overflow-y-auto" style="max-height: 600px;">
+          <table class="data-table w-full text-left border-collapse" style="min-width: max-content;">
+            <thead>
+              <tr class="border-b border-outline-variant bg-surface">
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">#</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">PNR</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap text-right">Cost Net</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap text-right">CashX Net</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap text-right">SPYJ Net</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap text-right">Variance</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Remark</th>
+              </tr>
+            </thead>
+            <tbody id="recon-tbody">
+              <tr>
+                <td colspan="7" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+                  Click the <strong>Run</strong> button to run reconciliation, or switch to this tab to load existing results.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="px-md py-sm border-t border-outline-variant bg-surface">
+          <span id="recon-footer-info" class="font-body-sm text-body-sm text-on-surface-variant"></span>
+        </div>
+      </div>
+
+    </div>
 
   </div>
   {% else %}
@@ -606,6 +725,193 @@
     loadSheetData(firstSheetId);
     {% endif %}
   });
+
+  // ── Reconciliation Tab ─────────────────────────────────────────────────────
+  const reconState = { page: 1, pageSize: 50, totalPages: 1, totalRows: 0 };
+
+  function switchToReconciliation() {
+    // Deactivate all sheet panels and buttons
+    document.querySelectorAll('.sheet-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.sheet-tab-btn').forEach(b => {
+      b.classList.remove('bg-surface-container-lowest', 'text-primary', 'border-outline-variant');
+      b.classList.add('bg-surface-container', 'border-transparent', 'text-on-surface-variant');
+    });
+
+    // Activate reconciliation panel and button
+    document.getElementById('sheet-panel-reconciliation').classList.add('active');
+    const btn = document.getElementById('tab-btn-reconciliation');
+    btn.classList.add('bg-surface-container-lowest', 'text-primary', 'border-outline-variant');
+    btn.classList.remove('bg-surface-container', 'border-transparent', 'text-on-surface-variant');
+
+    // Load results if not already loaded
+    loadReconciliationData(1);
+  }
+
+  async function runReconciliation() {
+    const btn = document.getElementById('recon-run-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="material-symbols-outlined text-[14px] animate-spin">sync</span> Running…';
+
+    try {
+      const resp = await fetch(`/files/${FILE_ID}/reconcile`, { method: 'POST' });
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.detail || 'Reconciliation failed');
+      }
+      await loadReconciliationData(1);
+      await loadReconciliationSummary();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<span class="material-symbols-outlined text-[14px]">play_arrow</span> Run';
+    }
+  }
+
+  async function loadReconciliationData(page) {
+    if (page < 1 || page > reconState.totalPages) return;
+    reconState.page = page;
+
+    const tbody = document.getElementById('recon-tbody');
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+          <span class="material-symbols-outlined animate-spin text-outline block mx-auto mb-sm">sync</span>
+          Loading…
+        </td>
+      </tr>`;
+
+    try {
+      const params = new URLSearchParams({
+        page:      reconState.page,
+        page_size: reconState.pageSize,
+      });
+      const remark = document.getElementById('recon-filter-remark').value;
+      const pnr    = document.getElementById('recon-filter-pnr').value.trim();
+      if (remark) params.append('remark', remark);
+      if (pnr)    params.append('pnr', pnr);
+
+      const resp = await fetch(`/files/${FILE_ID}/reconcile/results?${params}`);
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.detail || 'Failed to load results');
+      }
+      const data = await resp.json();
+
+      reconState.totalRows  = data.total;
+      reconState.totalPages = data.total_pages;
+
+      // Update header badge
+      document.getElementById('recon-total-badge').textContent =
+        `${data.total.toLocaleString()} rows`;
+
+      // Update pagination
+      const start = ((reconState.page - 1) * reconState.pageSize) + 1;
+      const end   = Math.min(reconState.page * reconState.pageSize, data.total);
+      document.getElementById('recon-page-info').textContent =
+        `Page ${data.page} of ${data.total_pages}`;
+      document.getElementById('recon-footer-info').textContent =
+        data.total > 0 ? `Showing ${start}–${end} of ${data.total.toLocaleString()} rows` : 'No results';
+      document.getElementById('recon-prev-btn').disabled = (data.page <= 1);
+      document.getElementById('recon-next-btn').disabled = (data.page >= data.total_pages);
+
+      if (!data.results || !data.results.length) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+              No reconciliation results found. Click <strong>Run</strong> to generate them.
+            </td>
+          </tr>`;
+        return;
+      }
+
+      const remarkColors = {
+        'Matched':                'bg-[#F0FDF4] text-[#166534]',
+        'Variance':               'bg-[#FEF2F2] text-[#991B1B]',
+        'Not in Cost':            'bg-[#FFF7ED] text-[#9A3412]',
+        'Not in CASH X':          'bg-[#FFFBEB] text-[#92400E]',
+        'Not in SPYJ':            'bg-[#F5F3FF] text-[#5B21B6]',
+        'Markup/Booking Charges': 'bg-[#EFF6FF] text-[#1D4ED8]',
+      };
+
+      let rowNum = start;
+      tbody.innerHTML = data.results.map(r => {
+        const varClass = r.variance > 0.99 || r.variance < -0.99
+          ? 'text-error font-semibold' : 'text-[#166534]';
+        const remarkCls = remarkColors[r.remark] || 'bg-surface-container text-on-surface';
+        return `
+          <tr class="border-b border-outline-variant/30 h-[40px] transition-colors hover:bg-surface-container-low">
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface-variant text-center border-r border-outline-variant/50 w-[60px]">${rowNum++}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface whitespace-nowrap">${escapeHtml(r.pnr)}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap">${fmt(r.cost_net)}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap">${fmt(r.cashx_net)}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap">${fmt(r.spyj_net)}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-right whitespace-nowrap ${varClass}">${fmt(r.variance)}</td>
+            <td class="px-md py-sm whitespace-nowrap">
+              <span class="inline-flex items-center px-2 py-[2px] rounded text-[11px] font-semibold ${remarkCls}">
+                ${escapeHtml(r.remark)}
+              </span>
+            </td>
+          </tr>`;
+      }).join('');
+
+      // Also load summary chips
+      loadReconciliationSummary();
+
+    } catch (err) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="7" class="px-md py-lg text-center font-body-sm text-body-sm text-error">
+            <span class="material-symbols-outlined text-[24px] block mx-auto mb-sm">error</span>
+            ${escapeHtml(err.message)}
+          </td>
+        </tr>`;
+    }
+  }
+
+  async function loadReconciliationSummary() {
+    try {
+      const resp = await fetch(`/files/${FILE_ID}/reconcile/summary`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+
+      const container = document.getElementById('recon-summary');
+      if (!data.by_remark || !data.by_remark.length) {
+        container.classList.add('hidden');
+        return;
+      }
+
+      const chipColors = {
+        'Matched':                'bg-[#F0FDF4] text-[#166534] border-[#BBF7D0]',
+        'Variance':               'bg-[#FEF2F2] text-[#991B1B] border-[#FECACA]',
+        'Not in Cost':            'bg-[#FFF7ED] text-[#9A3412] border-[#FED7AA]',
+        'Not in CASH X':          'bg-[#FFFBEB] text-[#92400E] border-[#FDE68A]',
+        'Not in SPYJ':            'bg-[#F5F3FF] text-[#5B21B6] border-[#DDD6FE]',
+        'Markup/Booking Charges': 'bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE]',
+      };
+
+      container.classList.remove('hidden');
+      container.innerHTML = data.by_remark.map(s => {
+        const cls = chipColors[s.remark] || 'bg-surface-container text-on-surface border-outline-variant';
+        return `<span class="inline-flex items-center gap-xs px-sm py-[3px] rounded-full border
+                             font-label-md text-label-md ${cls} cursor-pointer hover:opacity-80"
+                      onclick="filterByRemark('${escapeHtml(s.remark)}')">
+                  ${escapeHtml(s.remark)}
+                  <span class="font-data-mono">${s.count.toLocaleString()}</span>
+                </span>`;
+      }).join('');
+    } catch (_) {}
+  }
+
+  function filterByRemark(remark) {
+    document.getElementById('recon-filter-remark').value = remark;
+    loadReconciliationData(1);
+  }
+
+  function fmt(val) {
+    if (val === null || val === undefined) return '—';
+    return Number(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
 </script>
 
 <style>
