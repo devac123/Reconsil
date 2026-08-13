@@ -11,7 +11,7 @@ GET /dashboard                     -> dashboard.html
 GET /organizations                 -> organizations.html
 GET /organizations/{id}            -> organization_detail.html
 GET /uploaded-files                -> uploaded_files.html
-GET /file-mapping-ui/{file_id}     -> file_mapping.html
+GET /sheets-data/{file_id}         -> sheets_data.html
 GET /processing-result/{file_id}   -> processing_result.html
 
 NOTE: Starlette >= 0.36 / 1.x changed TemplateResponse to:
@@ -20,9 +20,7 @@ NOTE: Starlette >= 0.36 / 1.x changed TemplateResponse to:
   raises TypeError: unhashable type: 'dict' due to a broken LRU cache key.
 """
 
-import json
 import logging
-from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -30,9 +28,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
-from app.models.file_mapping import FileMapping
 from app.models.organization import Organization
-from app.models.transaction import Transaction
 from app.models.uploaded_file import UploadedFile, UploadStatus
 from app.models.uploaded_sheet import UploadedSheet
 
@@ -136,21 +132,10 @@ def organization_detail_page(
         .all()
     )
 
-    mappings = (
-        db.query(FileMapping)
-        .filter(FileMapping.organization_id == organization_id)
-        .order_by(FileMapping.sheet_name, FileMapping.excel_column)
-        .all()
-    )
-    mappings_by_sheet: dict = defaultdict(list)
-    for m in mappings:
-        mappings_by_sheet[m.sheet_name].append(m)
-
     return templates.TemplateResponse(request, "organization_detail.html", {
-        "active_page":       "organizations",
-        "org":               org,
-        "uploaded_files":    uploaded_files,
-        "mappings_by_sheet": dict(mappings_by_sheet),
+        "active_page":    "organizations",
+        "org":            org,
+        "uploaded_files": uploaded_files,
     })
 
 
@@ -185,61 +170,6 @@ def uploaded_files_page(
         "organizations":    organizations,
         "selected_org_id":  org_id,
         "selected_status":  status,
-    })
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Column Mapping UI
-# ─────────────────────────────────────────────────────────────────────────────
-
-@router.get("/file-mapping-ui/{uploaded_file_id}", response_class=HTMLResponse)
-def file_mapping_page(
-    uploaded_file_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    uploaded_file = (
-        db.query(UploadedFile).filter(UploadedFile.id == uploaded_file_id).first()
-    )
-    if not uploaded_file:
-        raise HTTPException(status_code=404, detail="Uploaded file not found")
-
-    sheets = (
-        db.query(UploadedSheet)
-        .filter(UploadedSheet.uploaded_file_id == uploaded_file_id)
-        .order_by(UploadedSheet.sheet_index)
-        .all()
-    )
-
-    existing_mappings = (
-        db.query(FileMapping)
-        .filter(FileMapping.organization_id == uploaded_file.organization_id)
-        .all()
-    )
-
-    existing_dict: dict = defaultdict(dict)
-    for m in existing_mappings:
-        existing_dict[m.sheet_name][m.excel_column] = {
-            "system_field": m.system_field,
-            "data_type":    m.data_type.value,
-            "is_required":  m.is_required,
-        }
-
-    sheets_json = json.dumps([
-        {
-            "sheet_name":    s.sheet_name,
-            "sheet_index":   s.sheet_index,
-            "total_columns": s.total_columns,
-        }
-        for s in sheets
-    ])
-
-    return templates.TemplateResponse(request, "file_mapping.html", {
-        "active_page":            "uploaded_files",
-        "uploaded_file":          uploaded_file,
-        "sheets":                 sheets,
-        "sheets_json":            sheets_json,
-        "existing_mappings_json": json.dumps(dict(existing_dict)),
     })
 
 
@@ -289,14 +219,7 @@ def processing_result_page(
     if not uploaded_file:
         raise HTTPException(status_code=404, detail="Uploaded file not found")
 
-    total_processed = (
-        db.query(Transaction)
-        .filter(Transaction.uploaded_file_id == uploaded_file_id)
-        .count()
-    )
-
     return templates.TemplateResponse(request, "processing_result.html", {
-        "active_page":     "uploaded_files",
-        "uploaded_file":   uploaded_file,
-        "total_processed": total_processed,
+        "active_page":   "uploaded_files",
+        "uploaded_file": uploaded_file,
     })
