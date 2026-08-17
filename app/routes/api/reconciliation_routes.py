@@ -225,6 +225,8 @@ def get_reconciliation_results(
             {
                 "id":             r.id,
                 "pnr":            r.pnr,
+                "booking_date":   r.booking_date.isoformat() if r.booking_date else None,
+                "customer_name":  r.customer_name,
                 "cost_pnr":       r.cost_pnr,
                 "cost_sale":      r.cost_sale,
                 "cost_refund":    r.cost_refund,

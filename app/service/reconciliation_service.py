@@ -237,6 +237,8 @@ class ReconciliationService:
             rows.append({
                 "uploaded_file_id": result_file_id,
                 "pnr":              pnr,
+                "booking_date":     c["booking_date"] if c else None,
+                "customer_name":    c["customer_name"] if c else None,
 
                 "cost_pnr":    pnr if c else "not found",
                 "cost_sale":   cost_sale,
@@ -329,9 +331,12 @@ class ReconciliationService:
 
         Debit  rows → add to sale.
         Credit rows → add to refund (store as positive).
+        Also captures BookingDate and customer name (Name1) per PNR.
         """
         sheet_ids = sheet_map.get(_SHEET_AIR_COST)
-        agg: dict[str, dict] = defaultdict(lambda: {"sale": 0.0, "refund": 0.0})
+        agg: dict[str, dict] = defaultdict(
+            lambda: {"sale": 0.0, "refund": 0.0, "booking_date": None, "customer_name": None}
+        )
 
         for raw in self._iter_rows(sheet_ids):
             pnr = str(raw.get("RecordLocator") or "").strip()
@@ -345,6 +350,18 @@ class ReconciliationService:
                 agg[pnr]["sale"] += amount
             elif dc == "credit":
                 agg[pnr]["refund"] += abs(amount)
+
+            # Capture BookingDate (first non-null value wins)
+            if agg[pnr]["booking_date"] is None:
+                raw_date = raw.get("BookingDate") or raw.get("Booking Date") or raw.get("booking_date")
+                if raw_date and str(raw_date).strip().lower() not in ("nan", "none", ""):
+                    agg[pnr]["booking_date"] = raw_date
+
+            # Capture customer/passenger name from Name1 (first non-null wins)
+            if agg[pnr]["customer_name"] is None:
+                name = raw.get("Name1") or raw.get("name1")
+                if name and str(name).strip().lower() not in ("nan", "none", ""):
+                    agg[pnr]["customer_name"] = str(name).strip()
 
         result = {}
         for pnr, v in agg.items():

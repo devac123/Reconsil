@@ -404,6 +404,7 @@
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">#</th>
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">PNR</th>
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Booking Date</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Customer Name</th>
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Amount</th>
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Refund</th>
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap text-right">Cost Net</th>
@@ -419,7 +420,7 @@
             </thead>
             <tbody id="recon-tbody">
               <tr>
-                <td colspan="7" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+                <td colspan="15" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
                   Click the <strong>Run</strong> button to run reconciliation, or switch to this tab to load existing results.
                 </td>
               </tr>
@@ -782,7 +783,7 @@
     const tbody = document.getElementById('recon-tbody');
     tbody.innerHTML = `
       <tr>
-        <td colspan="7" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+        <td colspan="15" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
           <span class="material-symbols-outlined animate-spin text-outline block mx-auto mb-sm">sync</span>
           Loading…
         </td>
@@ -824,7 +825,7 @@
       if (!data.results || !data.results.length) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="7" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+            <td colspan="15" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
               No reconciliation results found. Click <strong>Run</strong> to generate them.
             </td>
           </tr>`;
@@ -845,13 +846,22 @@
         const varClass = r.variance > 0.99 || r.variance < -0.99
           ? 'text-error font-semibold' : 'text-[#166534]';
         const remarkCls = remarkColors[r.remark] || 'bg-surface-container text-on-surface';
+        const bookingDate = r.booking_date ? r.booking_date : '—';
         return `
           <tr class="border-b border-outline-variant/30 h-[40px] transition-colors hover:bg-surface-container-low">
             <td class="px-md py-sm font-data-mono text-data-mono text-on-surface-variant text-center border-r border-outline-variant/50 w-[60px]">${rowNum++}</td>
             <td class="px-md py-sm font-data-mono text-data-mono text-on-surface whitespace-nowrap">${escapeHtml(r.pnr)}</td>
-            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap">${fmt(r.cost_net)}</td>
-            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap">${fmt(r.cashx_net)}</td>
-            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap">${fmt(r.spyj_net)}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface whitespace-nowrap">${escapeHtml(bookingDate)}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface whitespace-nowrap">${escapeHtml(r.customer_name || '—')}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap">${fmt(r.cost_sale)}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap">${fmt(r.cost_refund)}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap border-r border-outline-variant/50">${fmt(r.cost_net)}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap">${fmt(r.cashx_amount)}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap">${fmt(r.cashx_refund)}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap border-r border-outline-variant/50">${fmt(r.cashx_net)}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap">${fmt(r.spyj_amount)}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap">${fmt(r.spyj_refund)}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap border-r border-outline-variant/50">${fmt(r.spyj_net)}</td>
             <td class="px-md py-sm font-data-mono text-data-mono text-right whitespace-nowrap ${varClass}">${fmt(r.variance)}</td>
             <td class="px-md py-sm whitespace-nowrap">
               <span class="inline-flex items-center px-2 py-[2px] rounded text-[11px] font-semibold ${remarkCls}">
@@ -867,7 +877,7 @@
     } catch (err) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="7" class="px-md py-lg text-center font-body-sm text-body-sm text-error">
+          <td colspan="15" class="px-md py-lg text-center font-body-sm text-body-sm text-error">
             <span class="material-symbols-outlined text-[24px] block mx-auto mb-sm">error</span>
             ${escapeHtml(err.message)}
           </td>

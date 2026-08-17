@@ -16,7 +16,7 @@ Structure mirrors the original "Reconcilation" sheet in the client workbook:
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -42,6 +42,15 @@ class ReconciliationResult(Base):
         nullable=False,
         index=True,
     )
+
+    # Booking date taken from AIR COST TRN (BookingDate column)
+    booking_date: Mapped[datetime | None] = mapped_column(
+        Date,
+        nullable=True,
+    )
+
+    # Customer / passenger name taken from AIR COST TRN (Name1 column)
+    customer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # ── Cost side (AIR COST TRN) ─────────────────────────────────────────
     # Matched PNR string (same as pnr, or "not found")
