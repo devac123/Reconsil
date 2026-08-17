@@ -31,6 +31,13 @@ class UploadedFile(Base):
         index=True,
     )
 
+    batch_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("upload_batches.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Human-readable name the user submitted
     original_filename: Mapped[str] = mapped_column(
         String(512),
@@ -89,6 +96,7 @@ class UploadedFile(Base):
 
     # Relationship (lazy-loaded; avoids circular imports with Organization)
     organization = relationship("Organization", backref="uploaded_files", lazy="select")
+    batch = relationship("UploadBatch", backref="uploaded_files", lazy="select")
 
     def __repr__(self) -> str:
         return (

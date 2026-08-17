@@ -39,15 +39,15 @@ input[type="file"]::file-selector-button { display: none; }
          class="upload-zone border-2 border-dashed border-outline-variant rounded-lg p-xl
                 flex flex-col items-center justify-center text-center cursor-pointer
                 bg-surface hover:bg-surface-container transition-colors relative min-h-[240px]">
-      <input id="file-upload" type="file" accept=".xlsx,.xls"
+      <input id="file-upload" type="file" accept=".xlsx,.xls" multiple
              class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
              aria-label="File upload input"/>
       <span class="material-symbols-outlined text-outline text-[48px] mb-md"
             style="font-variation-settings:'FILL' 1">upload_file</span>
       <p class="font-headline-sm text-headline-sm text-on-surface mb-xs">
-        Select a file or drag and drop here
+        Select files or drag and drop here
       </p>
-      <p class="font-body-sm text-body-sm text-outline mb-lg">Excel files only (.xlsx, .xls) · max 50 MB</p>
+      <p class="font-body-sm text-body-sm text-outline mb-lg">Excel files only (.xlsx, .xls)</p>
       <button type="button"
               class="bg-primary text-on-primary font-label-md text-label-md px-lg py-[10px]
                      rounded hover:bg-on-primary-fixed-variant transition-colors
@@ -158,6 +158,12 @@ input[type="file"]::file-selector-button { display: none; }
           View All Files
           <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
         </a>
+        <button id="combined-reconcile-btn"
+                class="hidden border border-outline-variant text-on-surface font-label-md text-label-md px-lg py-[10px] rounded
+                       hover:bg-surface-container transition-colors flex items-center gap-xs">
+          Run Combined Reconciliation
+          <span class="material-symbols-outlined text-[18px]">sync_alt</span>
+        </button>
       </div>
     </div>
 
@@ -192,6 +198,7 @@ input[type="file"]::file-selector-button { display: none; }
   const resultArea     = document.getElementById('result-area');
   const resultSuccess  = document.getElementById('result-success');
   const resultError    = document.getElementById('result-error');
+  const combinedBtn    = document.getElementById('combined-reconcile-btn');
 
   // Progress card
   const progressCard   = document.getElementById('progress-card');
@@ -201,8 +208,9 @@ input[type="file"]::file-selector-button { display: none; }
   const progressRows   = document.getElementById('progress-rows');
   const progressIcon   = document.getElementById('progress-icon');
 
-  let selectedFile = null;
+  let selectedFiles = [];
   let activeSSE    = null;   // holds the EventSource so we can close it
+  let uploadedFileIds = [];
 
   // ── Drag & Drop ──────────────────────────────────────────────────────────
   ['dragenter','dragover','dragleave','drop'].forEach(ev =>
@@ -225,16 +233,25 @@ input[type="file"]::file-selector-button { display: none; }
 
   function handleFiles(files) {
     if (!files.length) return;
-    const file = files[0];
-    const ext  = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-    if (!['.xlsx', '.xls'].includes(ext)) {
-      alert('Please select a valid Excel file (.xlsx or .xls)');
+    const incoming = Array.from(files);
+    const invalid = incoming.find(file => {
+      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+      return !['.xlsx', '.xls'].includes(ext);
+    });
+    if (invalid) {
+      alert('Please select only Excel files (.xlsx or .xls)');
       fileInput.value = '';
       return;
     }
-    selectedFile = file;
-    filenameDisp.textContent = file.name;
-    filesizeDisp.textContent = formatBytes(file.size);
+    selectedFiles = incoming;
+    filenameDisp.textContent =
+      selectedFiles.length === 1
+        ? selectedFiles[0].name
+        : selectedFiles.length + ' workbooks selected';
+    filesizeDisp.textContent =
+      selectedFiles.length === 1
+        ? formatBytes(selectedFiles[0].size)
+        : selectedFiles.reduce((sum, file) => sum + file.size, 0).toLocaleString() + ' bytes total';
     selectedState.classList.remove('hidden');
     startBtn.disabled = false;
     dropZone.style.display = 'none';
@@ -242,15 +259,17 @@ input[type="file"]::file-selector-button { display: none; }
     resultSuccess.classList.add('hidden');
     resultError.classList.add('hidden');
     progressCard.classList.add('hidden');
+    combinedBtn.classList.add('hidden');
   }
 
   removeBtn.addEventListener('click', () => {
     fileInput.value = '';
-    selectedFile    = null;
+    selectedFiles   = [];
     selectedState.classList.add('hidden');
     startBtn.disabled = true;
     dropZone.style.display = '';
     progressCard.classList.add('hidden');
+    combinedBtn.classList.add('hidden');
   });
 
   // ── Progress helpers ─────────────────────────────────────────────────────
@@ -294,7 +313,7 @@ input[type="file"]::file-selector-button { display: none; }
 
   // ── Upload ───────────────────────────────────────────────────────────────
   startBtn.addEventListener('click', async () => {
-    if (!selectedFile) return;
+    if (!selectedFiles.length) return;
 
     // Close any previous SSE stream
     if (activeSSE) { activeSSE.close(); activeSSE = null; }
@@ -305,14 +324,24 @@ input[type="file"]::file-selector-button { display: none; }
     resultSuccess.classList.add('hidden');
     resultError.classList.add('hidden');
 
-    showProgress('Uploading file…', 0);
+    showProgress('Uploading file' + (selectedFiles.length > 1 ? 's' : '') + '…', 0);
 
     const formData = new FormData();
-    formData.append('file', selectedFile);
+    selectedFiles.forEach(file => formData.append('files', file));
 
     let jobId;
     try {
-      const resp = await fetch('/files/upload-async', { method: 'POST', body: formData });
+      const endpoint = selectedFiles.length > 1
+        ? '/files/upload-multiple-async'
+        : '/files/upload-async';
+      const singleFormData = new FormData();
+      if (selectedFiles.length === 1) {
+        singleFormData.append('file', selectedFiles[0]);
+      }
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        body: selectedFiles.length > 1 ? formData : singleFormData,
+      });
       if (!resp.ok) {
         const body = await resp.json().catch(() => ({}));
         throw new Error(body.detail || 'Upload request failed.');
@@ -352,14 +381,21 @@ input[type="file"]::file-selector-button { display: none; }
 
         // Show success card
         const r = job.result || {};
+        uploadedFileIds = r.uploaded_file_ids || (r.uploaded_file_id ? [r.uploaded_file_id] : []);
         document.getElementById('res-org').textContent     = r.organization      || '—';
-        document.getElementById('res-file-id').textContent = r.uploaded_file_id  || '—';
+        document.getElementById('res-file-id').textContent =
+          r.uploaded_file_ids ? r.uploaded_file_ids.join(', ') : (r.uploaded_file_id || '—');
         document.getElementById('res-sheets').textContent  = r.total_sheets      || '—';
         document.getElementById('res-rows').textContent    = (r.total_rows_imported || 0).toLocaleString();
 
         resultArea.classList.remove('hidden');
         resultSuccess.classList.remove('hidden');
         resultError.classList.add('hidden');
+        if (uploadedFileIds.length > 1) {
+          combinedBtn.classList.remove('hidden');
+        } else {
+          combinedBtn.classList.add('hidden');
+        }
         startBtn.disabled    = false;
         startBtn.textContent = 'Start Upload';
       }
@@ -389,6 +425,30 @@ input[type="file"]::file-selector-button { display: none; }
       startBtn.disabled    = false;
       startBtn.textContent = 'Start Upload';
     };
+  });
+
+  combinedBtn.addEventListener('click', async () => {
+    if (uploadedFileIds.length < 2) return;
+    combinedBtn.disabled = true;
+    combinedBtn.textContent = 'Reconciling…';
+    try {
+      const resp = await fetch('/files/reconcile-combined', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uploaded_file_ids: uploadedFileIds }),
+      });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(body.detail || 'Combined reconciliation failed.');
+      }
+      combinedBtn.textContent = 'Reconciliation Complete';
+      window.location.href = '/files/' + body.result_uploaded_file_id + '/reconcile/download';
+    } catch (err) {
+      combinedBtn.disabled = false;
+      combinedBtn.textContent = 'Run Combined Reconciliation';
+      document.getElementById('error-message').textContent = err.message;
+      resultError.classList.remove('hidden');
+    }
   });
 </script>
 {% endblock %}

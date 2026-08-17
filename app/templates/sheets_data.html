@@ -403,8 +403,15 @@
               <tr class="border-b border-outline-variant bg-surface">
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">#</th>
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">PNR</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Booking Date</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Amount</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Refund</th>
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap text-right">Cost Net</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Amount</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Refund</th>
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap text-right">CashX Net</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Amount</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Refund</th>
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap text-right">SPYJ Net</th>
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap text-right">Variance</th>
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Remark</th>
@@ -797,7 +804,6 @@
         throw new Error(err.detail || 'Failed to load results');
       }
       const data = await resp.json();
-
       reconState.totalRows  = data.total;
       reconState.totalPages = data.total_pages;
 

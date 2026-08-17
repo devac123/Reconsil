@@ -21,6 +21,7 @@ NOTE: Starlette >= 0.36 / 1.x changed TemplateResponse to:
 """
 
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -29,6 +30,7 @@ from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.models.organization import Organization
+from app.models.upload_batch import UploadBatch
 from app.models.uploaded_file import UploadedFile, UploadStatus
 from app.models.uploaded_sheet import UploadedSheet
 
@@ -52,6 +54,70 @@ def _get_file_stats(db: Session) -> dict:
         "processed_files":     db.query(UploadedFile).filter(UploadedFile.upload_status == UploadStatus.PROCESSED).count(),
         "failed_files":        db.query(UploadedFile).filter(UploadedFile.upload_status == UploadStatus.FAILED).count(),
     }
+
+
+def _status_value(uploaded_file: UploadedFile) -> str:
+    status = uploaded_file.upload_status
+    return status.value if hasattr(status, "value") else str(status)
+
+
+def _combined_status(files: list[UploadedFile]) -> str:
+    statuses = {_status_value(f) for f in files}
+    if "FAILED" in statuses:
+        return "FAILED"
+    if "PROCESSING" in statuses:
+        return "PROCESSING"
+    if statuses == {"PROCESSED"}:
+        return "PROCESSED"
+    if "UPLOADED" in statuses:
+        return "UPLOADED"
+    return next(iter(statuses), "UPLOADED")
+
+
+def _build_uploaded_file_items(files: list[UploadedFile]) -> list[dict]:
+    items: list[dict] = []
+    grouped: dict[int, list[UploadedFile]] = {}
+
+    for uploaded_file in files:
+        if uploaded_file.batch_id:
+            grouped.setdefault(uploaded_file.batch_id, []).append(uploaded_file)
+        else:
+            items.append({
+                "is_batch": False,
+                "id": uploaded_file.id,
+                "name": uploaded_file.original_filename,
+                "organization": uploaded_file.organization,
+                "organization_id": uploaded_file.organization_id,
+                "uploaded_at": uploaded_file.uploaded_at,
+                "file_size": uploaded_file.file_size,
+                "file_extension": uploaded_file.file_extension,
+                "status": _status_value(uploaded_file),
+                "file_ids": [uploaded_file.id],
+                "files": [uploaded_file],
+            })
+
+    for batch_id, batch_files in grouped.items():
+        batch = batch_files[0].batch
+        uploaded_at = max((f.uploaded_at for f in batch_files if f.uploaded_at), default=None)
+        items.append({
+            "is_batch": True,
+            "id": batch_id,
+            "name": batch.name if batch else f"Upload batch #{batch_id}",
+            "organization": batch.organization if batch and batch.organization else batch_files[0].organization,
+            "organization_id": (
+                batch.organization_id
+                if batch and batch.organization_id
+                else batch_files[0].organization_id
+            ),
+            "uploaded_at": uploaded_at,
+            "file_size": sum(f.file_size or 0 for f in batch_files),
+            "file_extension": ".xlsx",
+            "status": _combined_status(batch_files),
+            "file_ids": [f.id for f in batch_files],
+            "files": sorted(batch_files, key=lambda f: f.uploaded_at or f.created_at),
+        })
+
+    return sorted(items, key=lambda item: item["uploaded_at"] or datetime.min, reverse=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -162,11 +228,13 @@ def uploaded_files_page(
             pass
 
     uploaded_files = query.order_by(UploadedFile.uploaded_at.desc()).all()
+    upload_items = _build_uploaded_file_items(uploaded_files)
     organizations  = db.query(Organization).order_by(Organization.name).all()
 
     return templates.TemplateResponse(request, "uploaded_files.html", {
         "active_page":      "uploaded_files",
         "uploaded_files":   uploaded_files,
+        "upload_items":     upload_items,
         "organizations":    organizations,
         "selected_org_id":  org_id,
         "selected_status":  status,

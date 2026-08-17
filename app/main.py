@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from app.database.schema import ensure_schema
+
 # API Routes
 from app.routes.api.file_routes import router as file_router
 from app.routes.api.organization_routes import router as organization_router
@@ -16,6 +18,11 @@ app = FastAPI(
     description="FastAPI-based reconciliation system.",
     version="1.0.0",
 )
+
+
+@app.on_event("startup")
+def startup() -> None:
+    ensure_schema()
 
 # ── API Routers ───────────────────────────────────────────────────────────────
 app.include_router(file_router)

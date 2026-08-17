@@ -33,6 +33,7 @@ class UploadedFileService:
         organization_id: int,
         original_filename: str,
         stored_path: str,
+        batch_id: int | None = None,
     ) -> UploadedFile:
         """
         Create and persist a metadata record for a freshly-uploaded file.
@@ -88,6 +89,7 @@ class UploadedFileService:
             file_size=file_size,
             file_extension=file_extension,
             upload_status=UploadStatus.UPLOADED,
+            batch_id=batch_id,
         )
 
         return uploaded_file

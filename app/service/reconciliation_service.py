@@ -49,6 +49,7 @@ from sqlalchemy import insert, text
 from sqlalchemy.orm import Session
 
 from app.models.reconciliation_result import ReconciliationResult
+from app.models.uploaded_file import UploadedFile
 from app.models.uploaded_sheet import UploadedSheet
 from app.models.staging_record import StagingRecord
 
@@ -128,8 +129,44 @@ class ReconciliationService:
         int
             Number of reconciled PNR rows produced.
         """
+        return self.reconcile_combined([uploaded_file_id], result_uploaded_file_id=uploaded_file_id)
+
+    def reconcile_combined(
+        self,
+        uploaded_file_ids: list[int],
+        result_uploaded_file_id: int | None = None,
+    ) -> int:
+        """
+        Run reconciliation across one or more uploaded workbooks.
+
+        Rows from sheets with the same logical name are combined before
+        aggregation, so AIR COST TRN, CASH X sale/refund, and SPYJ sale/refund
+        can be split across multiple uploaded files.
+        """
+        uploaded_file_ids = list(dict.fromkeys(uploaded_file_ids))
+        if not uploaded_file_ids:
+            raise ValueError("At least one uploaded_file_id is required.")
+
+        result_file_id = result_uploaded_file_id or uploaded_file_ids[0]
+        if result_file_id not in uploaded_file_ids:
+            uploaded_file_ids.insert(0, result_file_id)
+
+        existing_ids = {
+            file_id
+            for (file_id,) in (
+                self._db.query(UploadedFile.id)
+                .filter(UploadedFile.id.in_(uploaded_file_ids))
+                .all()
+            )
+        }
+        missing_ids = [file_id for file_id in uploaded_file_ids if file_id not in existing_ids]
+        if missing_ids:
+            raise ValueError(f"Uploaded file id(s) not found: {missing_ids}")
+
         logger.info(
-            "Starting reconciliation for uploaded_file_id=%s.", uploaded_file_id
+            "Starting combined reconciliation for uploaded_file_ids=%s; result_file_id=%s.",
+            uploaded_file_ids,
+            result_file_id,
         )
 
         # Remove stale results from a previous run (if any)
@@ -138,11 +175,11 @@ class ReconciliationService:
                 "DELETE FROM reconciliation_results "
                 "WHERE uploaded_file_id = :fid"
             ),
-            {"fid": uploaded_file_id},
+            {"fid": result_file_id},
         )
 
-        # Load sheet-id map: normalised_sheet_name → sheet_id
-        sheet_map = self._load_sheet_map(uploaded_file_id)
+        # Load sheet-id map: normalised_sheet_name → list[sheet_id]
+        sheet_map = self._load_sheet_map(uploaded_file_ids)
         logger.info("Sheet map: %s", {k: v for k, v in sheet_map.items()})
 
         # Build aggregates per data source
@@ -198,7 +235,7 @@ class ReconciliationService:
             )
 
             rows.append({
-                "uploaded_file_id": uploaded_file_id,
+                "uploaded_file_id": result_file_id,
                 "pnr":              pnr,
 
                 "cost_pnr":    pnr if c else "not found",
@@ -230,8 +267,8 @@ class ReconciliationService:
 
         self._db.commit()
         logger.info(
-            "Reconciliation complete for file_id=%s: %s rows produced.",
-            uploaded_file_id,
+            "Combined reconciliation complete for file_ids=%s: %s rows produced.",
+            uploaded_file_ids,
             total_inserted,
         )
         return total_inserted
@@ -240,42 +277,47 @@ class ReconciliationService:
     # Sheet loading helpers                                                #
     # ------------------------------------------------------------------ #
 
-    def _load_sheet_map(self, uploaded_file_id: int) -> dict[str, int]:
+    def _load_sheet_map(self, uploaded_file_ids: list[int]) -> dict[str, list[int]]:
         """
-        Return a dict of normalised_sheet_name → sheet_id for *uploaded_file_id*.
+        Return normalised_sheet_name → sheet_id list for uploaded workbooks.
         """
         sheets = (
             self._db.query(UploadedSheet)
-            .filter(UploadedSheet.uploaded_file_id == uploaded_file_id)
+            .filter(UploadedSheet.uploaded_file_id.in_(uploaded_file_ids))
+            .order_by(UploadedSheet.uploaded_file_id, UploadedSheet.sheet_index)
             .all()
         )
-        return {s.sheet_name.strip().lower(): s.id for s in sheets}
+        sheet_map: dict[str, list[int]] = defaultdict(list)
+        for sheet in sheets:
+            sheet_map[sheet.sheet_name.strip().lower()].append(sheet.id)
+        return dict(sheet_map)
 
-    def _iter_rows(self, sheet_id: int | None):
+    def _iter_rows(self, sheet_ids: list[int] | None):
         """
-        Yield raw_data dicts for every staging record in *sheet_id*.
+        Yield raw_data dicts for every staging record in *sheet_ids*.
         Uses chunked iteration to stay memory-efficient.
         """
-        if sheet_id is None:
+        if not sheet_ids:
             return
 
-        offset = 0
-        while True:
-            chunk = (
-                self._db.query(StagingRecord.raw_data)
-                .filter(StagingRecord.uploaded_sheet_id == sheet_id)
-                .order_by(StagingRecord.row_number)
-                .offset(offset)
-                .limit(_CHUNK_SIZE)
-                .all()
-            )
-            if not chunk:
-                break
-            for (raw_data,) in chunk:
-                yield raw_data
-            if len(chunk) < _CHUNK_SIZE:
-                break
-            offset += _CHUNK_SIZE
+        for sheet_id in sheet_ids:
+            offset = 0
+            while True:
+                chunk = (
+                    self._db.query(StagingRecord.raw_data)
+                    .filter(StagingRecord.uploaded_sheet_id == sheet_id)
+                    .order_by(StagingRecord.row_number)
+                    .offset(offset)
+                    .limit(_CHUNK_SIZE)
+                    .all()
+                )
+                if not chunk:
+                    break
+                for (raw_data,) in chunk:
+                    yield raw_data
+                if len(chunk) < _CHUNK_SIZE:
+                    break
+                offset += _CHUNK_SIZE
 
     # ------------------------------------------------------------------ #
     # Per-source aggregation                                               #
@@ -288,10 +330,10 @@ class ReconciliationService:
         Debit  rows → add to sale.
         Credit rows → add to refund (store as positive).
         """
-        sheet_id = sheet_map.get(_SHEET_AIR_COST)
+        sheet_ids = sheet_map.get(_SHEET_AIR_COST)
         agg: dict[str, dict] = defaultdict(lambda: {"sale": 0.0, "refund": 0.0})
 
-        for raw in self._iter_rows(sheet_id):
+        for raw in self._iter_rows(sheet_ids):
             pnr = str(raw.get("RecordLocator") or "").strip()
             if not pnr or pnr.lower() in ("nan", "none", ""):
                 continue
@@ -324,12 +366,12 @@ class ReconciliationService:
           CASH x SAle  → "Formatted PNR"
           CASH X Re    → "PNR formatted"
         """
-        sheet_id = sheet_map.get(sheet_key)
+        sheet_ids = sheet_map.get(sheet_key)
         pnr_col = "Formatted PNR" if sheet_key == _SHEET_CASHX_SALE else "PNR formatted"
 
         agg: dict[str, float] = defaultdict(float)
 
-        for raw in self._iter_rows(sheet_id):
+        for raw in self._iter_rows(sheet_ids):
             pnr = str(raw.get(pnr_col) or "").strip()
             if not pnr or pnr.lower() in ("nan", "none", ""):
                 continue
@@ -341,10 +383,10 @@ class ReconciliationService:
 
     def _aggregate_spyj_sale(self, sheet_map: dict) -> dict[str, float]:
         """Aggregate SPYJ SALE: Total Amount by GDS PNR."""
-        sheet_id = sheet_map.get(_SHEET_SPYJ_SALE)
+        sheet_ids = sheet_map.get(_SHEET_SPYJ_SALE)
         agg: dict[str, float] = defaultdict(float)
 
-        for raw in self._iter_rows(sheet_id):
+        for raw in self._iter_rows(sheet_ids):
             pnr = str(raw.get("GDS PNR") or "").strip()
             if not pnr or pnr.lower() in ("nan", "none", ""):
                 continue
@@ -356,10 +398,10 @@ class ReconciliationService:
 
     def _aggregate_spyj_refund(self, sheet_map: dict) -> dict[str, float]:
         """Aggregate SPJY Refund: Total Refund Amount by GDS PNR."""
-        sheet_id = sheet_map.get(_SHEET_SPJY_REF)
+        sheet_ids = sheet_map.get(_SHEET_SPJY_REF)
         agg: dict[str, float] = defaultdict(float)
 
-        for raw in self._iter_rows(sheet_id):
+        for raw in self._iter_rows(sheet_ids):
             pnr = str(raw.get("GDS PNR") or "").strip()
             if not pnr or pnr.lower() in ("nan", "none", ""):
                 continue

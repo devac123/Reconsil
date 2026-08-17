@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from app.database.database import SessionLocal
 from app.database.session import get_db
+from app.models.upload_batch import UploadBatch
 from app.models.uploaded_file import UploadStatus
 from app.service import progress_store
 from app.service.organization_service import get_or_create_organization
@@ -56,7 +57,10 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 def _save_file(upload: UploadFile) -> Path:
     """Write *upload* to UPLOAD_DIR and return the path."""
-    file_path = UPLOAD_DIR / upload.filename
+    original_name = Path(upload.filename or "workbook.xlsx").name
+    file_path = UPLOAD_DIR / original_name
+    if file_path.exists():
+        file_path = UPLOAD_DIR / f"{file_path.stem}-{uuid.uuid4().hex[:8]}{file_path.suffix}"
     try:
         with open(file_path, "wb") as buf:
             shutil.copyfileobj(upload.file, buf)
@@ -70,6 +74,55 @@ def _save_file(upload: UploadFile) -> Path:
 # Background ingestion worker (used by upload-async)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _ingest_saved_file(
+    db: Session,
+    file_path: Path,
+    filename: str,
+    job_id: str | None = None,
+    finalize_progress: bool = True,
+    batch_id: int | None = None,
+) -> dict:
+    """Ingest one already-saved workbook and return its result payload."""
+    organization = get_or_create_organization(str(file_path), db)
+
+    uploaded_file_service = UploadedFileService(db)
+    uploaded_file = uploaded_file_service.record_upload(
+        organization_id=organization.id,
+        original_filename=filename,
+        stored_path=str(file_path),
+        batch_id=batch_id,
+    )
+
+    uploaded_sheet_service = UploadedSheetService(db)
+    sheets = uploaded_sheet_service.ingest_sheets(
+        uploaded_file_id=uploaded_file.id,
+        file_path=str(file_path),
+    )
+
+    uploaded_file.upload_status = UploadStatus.PROCESSING
+    db.commit()
+
+    staging_service = StagingRecordService(db)
+    total_rows = staging_service.ingest_rows(
+        file_path=str(file_path),
+        sheets=sheets,
+        job_id=job_id,
+        finalize_progress=finalize_progress,
+    )
+
+    uploaded_file.upload_status = UploadStatus.PROCESSED
+    db.commit()
+
+    return {
+        "organization": organization.name,
+        "uploaded_file_id": uploaded_file.id,
+        "filename": filename,
+        "total_sheets": len(sheets),
+        "total_rows_imported": total_rows,
+        "status": "Imported Successfully",
+    }
+
+
 def _run_ingestion(job_id: str, file_path: Path, filename: str) -> None:
     """
     Run the full ingest pipeline in a background thread.
@@ -78,37 +131,7 @@ def _run_ingestion(job_id: str, file_path: Path, filename: str) -> None:
     """
     db: Session = SessionLocal()
     try:
-        # ── Organisation ──────────────────────────────────────────────────
-        organization = get_or_create_organization(str(file_path), db)
-
-        # ── Record upload ─────────────────────────────────────────────────
-        uploaded_file_service = UploadedFileService(db)
-        uploaded_file = uploaded_file_service.record_upload(
-            organization_id=organization.id,
-            original_filename=filename,
-            stored_path=str(file_path),
-        )
-
-        # ── Sheet metadata ─────────────────────────────────────────────────
-        uploaded_sheet_service = UploadedSheetService(db)
-        sheets = uploaded_sheet_service.ingest_sheets(
-            uploaded_file_id=uploaded_file.id,
-            file_path=str(file_path),
-        )
-
-        # ── Row ingestion ──────────────────────────────────────────────────
-        uploaded_file.upload_status = UploadStatus.PROCESSING
-        db.commit()
-
-        staging_service = StagingRecordService(db)
-        total_rows = staging_service.ingest_rows(
-            file_path=str(file_path),
-            sheets=sheets,
-            job_id=job_id,
-        )
-
-        uploaded_file.upload_status = UploadStatus.PROCESSED
-        db.commit()
+        result = _ingest_saved_file(db, file_path, filename, job_id=job_id)
 
         # Store the final result payload so the SSE client can display it
         progress_store.update_job(
@@ -116,19 +139,78 @@ def _run_ingestion(job_id: str, file_path: Path, filename: str) -> None:
             status="done",
             percent=100,
             message="Ingestion complete.",
-            result={
-                "organization":       organization.name,
-                "uploaded_file_id":   uploaded_file.id,
-                "total_sheets":       len(sheets),
-                "total_rows_imported": total_rows,
-                "status":             "Imported Successfully",
-            },
+            result=result,
         )
 
     except Exception as exc:
         logger.exception("Background ingestion failed for job '%s'.", job_id)
         try:
             # Best-effort: mark file as failed if we got that far
+            db.rollback()
+        except Exception:
+            pass
+        progress_store.update_job(
+            job_id,
+            status="failed",
+            message="Ingestion failed.",
+            error=str(exc),
+        )
+    finally:
+        db.close()
+
+
+def _run_multi_ingestion(job_id: str, saved_files: list[tuple[Path, str]]) -> None:
+    """Ingest multiple saved workbooks sequentially under one progress job."""
+    db: Session = SessionLocal()
+    results: list[dict] = []
+    try:
+        first_org = get_or_create_organization(str(saved_files[0][0]), db)
+        batch = UploadBatch(
+            organization_id=first_org.id,
+            name=f"Multi-workbook upload ({len(saved_files)} files)",
+        )
+        db.add(batch)
+        db.commit()
+        db.refresh(batch)
+
+        for index, (file_path, filename) in enumerate(saved_files, start=1):
+            progress_store.update_job(
+                job_id,
+                status="processing",
+                message=f"Processing workbook {index}/{len(saved_files)}: {filename}",
+            )
+            result = _ingest_saved_file(
+                db,
+                file_path,
+                filename,
+                job_id=job_id,
+                finalize_progress=False,
+                batch_id=batch.id,
+            )
+            results.append(result)
+
+        uploaded_file_ids = [item["uploaded_file_id"] for item in results]
+        progress_store.update_job(
+            job_id,
+            status="done",
+            percent=100,
+            message="All workbooks imported.",
+            result={
+                "organization": ", ".join(sorted({item["organization"] for item in results})),
+                "uploaded_file_ids": uploaded_file_ids,
+                "uploaded_file_id": uploaded_file_ids[0] if uploaded_file_ids else None,
+                "batch_id": batch.id,
+                "batch_name": batch.name,
+                "total_files": len(results),
+                "total_sheets": sum(item["total_sheets"] for item in results),
+                "total_rows_imported": sum(item["total_rows_imported"] for item in results),
+                "files": results,
+                "status": "Imported Successfully",
+            },
+        )
+    except Exception as exc:
+        logger.exception("Multi-file ingestion failed for job '%s'.", job_id)
+        try:
             db.rollback()
         except Exception:
             pass
@@ -163,66 +245,15 @@ async def upload_file(
         logger.error("Failed to save '%s': %s", file.filename, exc)
         raise HTTPException(status_code=500, detail="Could not save the uploaded file.")
 
-    # ── Organisation ──────────────────────────────────────────────────────
     try:
-        organization = get_or_create_organization(str(file_path), db)
+        result = _ingest_saved_file(db, file_path, file.filename or file_path.name)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception:
-        logger.exception("Error resolving organization for '%s'.", file.filename)
-        raise HTTPException(status_code=500, detail="Error detecting organization.")
-
-    # ── Record upload ──────────────────────────────────────────────────────
-    try:
-        uploaded_file_service = UploadedFileService(db)
-        uploaded_file = uploaded_file_service.record_upload(
-            organization_id=organization.id,
-            original_filename=file.filename,
-            stored_path=str(file_path),
-        )
-    except Exception:
-        logger.exception("Error recording upload for '%s'.", file.filename)
-        raise HTTPException(status_code=500, detail="Error recording upload.")
-
-    # ── Sheet metadata ─────────────────────────────────────────────────────
-    try:
-        uploaded_sheet_service = UploadedSheetService(db)
-        sheets = uploaded_sheet_service.ingest_sheets(
-            uploaded_file_id=uploaded_file.id,
-            file_path=str(file_path),
-        )
-    except (FileNotFoundError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-    except Exception:
-        logger.exception("Error ingesting sheets for '%s'.", file.filename)
-        raise HTTPException(status_code=500, detail="Error reading workbook sheets.")
-
-    # ── Row ingestion ──────────────────────────────────────────────────────
-    uploaded_file.upload_status = UploadStatus.PROCESSING
-    db.commit()
-
-    try:
-        staging_service = StagingRecordService(db)
-        total_rows_imported = staging_service.ingest_rows(
-            file_path=str(file_path),
-            sheets=sheets,
-        )
-    except Exception:
-        uploaded_file.upload_status = UploadStatus.FAILED
-        db.commit()
         logger.exception("Staging import failed for '%s'.", file.filename)
         raise HTTPException(status_code=500, detail="Error importing row data.")
 
-    uploaded_file.upload_status = UploadStatus.PROCESSED
-    db.commit()
-
-    return {
-        "organization":        organization.name,
-        "uploaded_file_id":    uploaded_file.id,
-        "total_sheets":        len(sheets),
-        "total_rows_imported": total_rows_imported,
-        "status":              "Imported Successfully",
-    }
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -253,6 +284,38 @@ async def upload_file_async(file: UploadFile = File(...)):
     )
     t.start()
     logger.info("Started background ingestion thread for job '%s'.", job_id)
+
+    return {"job_id": job_id}
+
+
+@router.post("/upload-multiple-async", status_code=202)
+async def upload_multiple_files_async(files: list[UploadFile] = File(...)):
+    """
+    Save multiple Excel files, start a background ingestion thread, and return
+    one job_id. The final progress payload includes all uploaded_file_ids.
+    """
+    if not files:
+        raise HTTPException(status_code=422, detail="Please upload at least one file.")
+
+    saved_files: list[tuple[Path, str]] = []
+    try:
+        for upload in files:
+            saved_files.append((_save_file(upload), upload.filename or "workbook.xlsx"))
+    except OSError as exc:
+        logger.error("Failed to save one of the uploaded files: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not save uploaded files.")
+
+    job_id = str(uuid.uuid4())
+    progress_store.create_job(job_id)
+
+    t = threading.Thread(
+        target=_run_multi_ingestion,
+        args=(job_id, saved_files),
+        daemon=True,
+        name=f"multi-ingest-{job_id[:8]}",
+    )
+    t.start()
+    logger.info("Started background multi-file ingestion thread for job '%s'.", job_id)
 
     return {"job_id": job_id}
 

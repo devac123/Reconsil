@@ -23,6 +23,7 @@ from openpyxl.utils import get_column_letter
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -34,6 +35,11 @@ from app.service.reconciliation_service import ReconciliationService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/files", tags=["Reconciliation"])
+
+
+class CombinedReconciliationRequest(BaseModel):
+    uploaded_file_ids: list[int] = Field(..., min_length=1)
+    result_uploaded_file_id: int | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -53,6 +59,51 @@ def _get_file_or_404(uploaded_file_id: int, db: Session) -> UploadedFile:
 # ─────────────────────────────────────────────────────────────────────────────
 # POST /files/{id}/reconcile
 # ─────────────────────────────────────────────────────────────────────────────
+
+@router.post(
+    "/reconcile-combined",
+    status_code=status.HTTP_200_OK,
+    summary="Run reconciliation across multiple uploaded workbooks",
+    description=(
+        "Combines rows from matching sheet names across multiple uploaded files "
+        "before running the Cost-vs-Revenue reconciliation. Results are stored "
+        "against result_uploaded_file_id, or the first uploaded_file_id when not supplied."
+    ),
+)
+def run_combined_reconciliation(
+    body: CombinedReconciliationRequest,
+    db: Session = Depends(get_db),
+):
+    result_file_id = body.result_uploaded_file_id or body.uploaded_file_ids[0]
+
+    try:
+        svc = ReconciliationService(db)
+        total_rows = svc.reconcile_combined(
+            uploaded_file_ids=body.uploaded_file_ids,
+            result_uploaded_file_id=result_file_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    except Exception as exc:
+        logger.exception(
+            "Combined reconciliation failed for uploaded_file_ids=%s.",
+            body.uploaded_file_ids,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Combined reconciliation failed: {exc}",
+        )
+
+    return {
+        "uploaded_file_ids": body.uploaded_file_ids,
+        "result_uploaded_file_id": result_file_id,
+        "status": "completed",
+        "reconciled_rows": total_rows,
+        "message": (
+            f"Combined reconciliation complete. {total_rows} PNR rows produced "
+            f"from {len(set(body.uploaded_file_ids))} workbook(s)."
+        ),
+    }
 
 @router.post(
     "/{uploaded_file_id}/reconcile",
@@ -157,6 +208,7 @@ def get_reconciliation_results(
     offset  = (page - 1) * page_size
     records = q.order_by(ReconciliationResult.pnr).offset(offset).limit(page_size).all()
 
+    # print(f"Returning {len(records)} records (page {page} of {max(1, -(-total // page_size))})")
     return {
         "uploaded_file_id": uploaded_file_id,
         "total":            total,

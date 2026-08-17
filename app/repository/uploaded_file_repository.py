@@ -34,6 +34,7 @@ class UploadedFileRepository:
         file_size: int,
         file_extension: str,
         upload_status: UploadStatus = UploadStatus.UPLOADED,
+        batch_id: int | None = None,
     ) -> UploadedFile:
         """
         Persist a new :class:`UploadedFile` record and return it.
@@ -63,6 +64,7 @@ class UploadedFileRepository:
             file_size=file_size,
             file_extension=file_extension,
             upload_status=upload_status,
+            batch_id=batch_id,
         )
         self._db.add(record)
         self._db.commit()

@@ -255,6 +255,7 @@ class StagingRecordService:
         sheets: list[UploadedSheet],
         batch_size: int = BATCH_SIZE,
         job_id: str | None = None,
+        finalize_progress: bool = True,
     ) -> int:
         """
         Read every data row from the workbook and bulk-insert staging records
@@ -271,6 +272,10 @@ class StagingRecordService:
         job_id : str | None
             When provided, progress updates are pushed to the progress store
             after every committed batch so the SSE endpoint can stream them.
+        finalize_progress : bool
+            When ``True``, mark the progress job done after this workbook.
+            Multi-workbook ingestion sets this to ``False`` until all files
+            have been processed.
 
         Returns
         -------
@@ -323,7 +328,7 @@ class StagingRecordService:
             total_rows_inserted  += sheet_rows
             cumulative_rows_done += sheet_total
 
-        if job_id:
+        if job_id and finalize_progress:
             progress_store.update_job(
                 job_id,
                 status="done",

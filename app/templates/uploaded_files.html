@@ -57,7 +57,7 @@
         </select>
       </div>
       <div class="font-body-sm text-body-sm text-outline">
-        Showing {{ uploaded_files | length }} file{{ 's' if uploaded_files | length != 1 }}
+        Showing {{ upload_items | length }} item{{ 's' if upload_items | length != 1 }}
       </div>
     </div>
 
@@ -75,45 +75,56 @@
           </tr>
         </thead>
         <tbody class="font-body-sm text-body-sm">
-          {% for f in uploaded_files %}
+          {% for item in upload_items %}
           <tr class="table-row-hover border-b border-outline-variant/30 h-[48px] transition-colors
                      {% if loop.index is even %}bg-surface{% endif %}">
             <td class="px-md py-sm">
               <div class="flex items-center gap-sm">
                 <span class="material-symbols-outlined text-outline text-[18px]">
-                  {% if f.file_extension in ['.xlsx', '.xls'] %}description
+                  {% if item.is_batch %}folder_copy
+                  {% elif item.file_extension in ['.xlsx', '.xls'] %}description
                   {% else %}dataset{% endif %}
                 </span>
-                <span class="text-on-surface font-medium truncate max-w-[250px]">
-                  {{ f.original_filename }}
-                </span>
+                <div class="min-w-0">
+                  <span class="text-on-surface font-medium truncate max-w-[300px] block">
+                    {{ item.name }}
+                  </span>
+                  {% if item.is_batch %}
+                    <span class="text-outline text-[11px] block truncate max-w-[420px]">
+                      {{ item.files | length }} workbooks:
+                      {% for child in item.files %}
+                        {{ child.original_filename }}{% if not loop.last %}, {% endif %}
+                      {% endfor %}
+                    </span>
+                  {% endif %}
+                </div>
               </div>
             </td>
             <td class="px-md py-sm text-on-surface-variant">
-              {% if f.organization %}
-                <a href="/organizations/{{ f.organization_id }}"
+              {% if item.organization %}
+                <a href="/organizations/{{ item.organization_id }}"
                    class="hover:text-primary hover:underline transition-colors">
-                  {{ f.organization.name }}
+                  {{ item.organization.name }}
                 </a>
               {% else %}—{% endif %}
             </td>
             <td class="px-md py-sm text-right font-data-mono text-data-mono text-on-surface-variant">
-              {{ f.uploaded_at.strftime('%Y-%m-%d %H:%M') if f.uploaded_at else '—' }}
+              {{ item.uploaded_at.strftime('%Y-%m-%d %H:%M') if item.uploaded_at else '—' }}
             </td>
             <td class="px-md py-sm text-right font-data-mono text-data-mono text-on-surface-variant">
-              {% if f.file_size %}
-                {% if f.file_size < 1048576 %}{{ (f.file_size / 1024)|round(1) }} KB
-                {% else %}{{ (f.file_size / 1048576)|round(1) }} MB{% endif %}
+              {% if item.file_size %}
+                {% if item.file_size < 1048576 %}{{ (item.file_size / 1024)|round(1) }} KB
+                {% else %}{{ (item.file_size / 1048576)|round(1) }} MB{% endif %}
               {% else %}—{% endif %}
             </td>
             <td class="px-md py-sm">
-              {% if f.upload_status.value == 'PROCESSED' %}
+              {% if item.status == 'PROCESSED' %}
                 <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#F0FDF4] text-[#166534]">Processed</span>
-              {% elif f.upload_status.value == 'PROCESSING' %}
+              {% elif item.status == 'PROCESSING' %}
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-[#FFFBEB] text-[#92400E]">
                   <span class="material-symbols-outlined text-[12px] animate-spin">sync</span>Processing
                 </span>
-              {% elif f.upload_status.value == 'FAILED' %}
+              {% elif item.status == 'FAILED' %}
                 <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#FEF2F2] text-[#991B1B]">Failed</span>
               {% else %}
                 <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-surface-container-high text-on-surface-variant">Uploaded</span>
@@ -122,17 +133,21 @@
             <td class="px-md py-sm text-right">
               <div class="flex items-center justify-end gap-sm">
                 <!-- Always show View Data if file was at least uploaded -->
-                <a href="/sheets-data/{{ f.id }}"
+                <a href="/sheets-data/{{ item.file_ids[0] }}"
                    class="text-primary font-label-md text-label-md hover:underline flex items-center gap-xs">
                   <span class="material-symbols-outlined text-[14px]">table_chart</span>View Data
                 </a>
-                {% if f.upload_status.value == 'PROCESSED' %}
+                {% if item.is_batch and item.status == 'PROCESSED' %}
                   <span class="text-outline-variant">·</span>
-                  <a href="/processing-result/{{ f.id }}"
+                  <button onclick="runCombinedReconcile({{ item.file_ids | tojson }}, this)"
+                          class="text-secondary font-label-md text-label-md hover:underline">Combined Result</button>
+                {% elif item.status == 'PROCESSED' %}
+                  <span class="text-outline-variant">·</span>
+                  <a href="/processing-result/{{ item.id }}"
                      class="text-secondary font-label-md text-label-md hover:underline">Result</a>
-                {% elif f.upload_status.value == 'FAILED' %}
+                {% elif item.status == 'FAILED' and not item.is_batch %}
                   <span class="text-outline-variant">·</span>
-                  <button onclick="retryProcess({{ f.id }}, this)"
+                  <button onclick="retryProcess({{ item.id }}, this)"
                           class="text-error font-label-md text-label-md hover:underline">Retry</button>
                 {% endif %}
               </div>
@@ -186,6 +201,27 @@
       alert('Unable to connect to the server.');
       btn.disabled = false;
       btn.textContent = 'Retry';
+    }
+  }
+
+  async function runCombinedReconcile(fileIds, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Reconciling…';
+    try {
+      const resp = await fetch('/files/reconcile-combined', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uploaded_file_ids: fileIds }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data.detail || 'Combined reconciliation failed.');
+      }
+      window.location.href = `/files/${data.result_uploaded_file_id}/reconcile/download`;
+    } catch (err) {
+      alert(err.message || 'Combined reconciliation failed.');
+      btn.disabled = false;
+      btn.textContent = 'Combined Result';
     }
   }
 </script>
