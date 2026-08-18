@@ -99,6 +99,14 @@ class ReconciliationResult(Base):
         lazy="select",
     )
 
+    # One result can have many individual remark rows
+    remarks = relationship(
+        "ReconciliationRemark",
+        back_populates="result",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
+
     def __repr__(self) -> str:
         return (
             f"<ReconciliationResult("

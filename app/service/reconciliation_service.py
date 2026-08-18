@@ -31,12 +31,12 @@ For a given uploaded file the engine:
 4.  For each PNR computes:
         variance = cost_net − cashx_net − spyj_net
 5.  Assigns a remark using the same rules visible in the sample data:
-        |variance| < 1          → "Matched"
-        300 ± 5                 → "Markup/Booking Charges"
-        cost_pnr == "not found" → "Not in Cost"
-        cashx_pnr == "not found"→ "Not in CASH X"
-        spyj_pnr == "not found" → "Not in SPYJ"
-        otherwise               → "Variance"
+        Missing from one or more sources → comma-joined labels, e.g.
+            "Not in SPYJ, Not in CASH X"  (all missing sources are listed)
+        All sources present:
+            |variance| < 1   → "Matched"
+            300 ± 10         → "Markup/Booking Charges"
+            otherwise        → "Variance"
 6.  Bulk-inserts all result rows into ``reconciliation_results``.
 7.  Returns the count of rows produced.
 """
@@ -49,6 +49,7 @@ from sqlalchemy import insert, text
 from sqlalchemy.orm import Session
 
 from app.models.reconciliation_result import ReconciliationResult
+from app.models.reconciliation_remark import ReconciliationRemark
 from app.models.uploaded_file import UploadedFile
 from app.models.uploaded_sheet import UploadedSheet
 from app.models.staging_record import StagingRecord
@@ -84,24 +85,35 @@ def _safe_float(value) -> float:
         return 0.0
 
 
-def _assign_remark(
+def _assign_remarks(
     variance: float,
     cost_found: bool,
     cashx_found: bool,
     spyj_found: bool,
-) -> str:
-    """Return a human-readable remark for a reconciled PNR row."""
-    if abs(variance) < _MATCH_TOL:
-        return "Matched"
-    if abs(abs(variance) - _MARKUP_VALUE) <= _MARKUP_TOL:
-        return "Markup/Booking Charges"
+) -> list[str]:
+    """Return a list of remark labels for a reconciled PNR row.
+
+    When a PNR is absent from multiple sources every missing-source label
+    is included, e.g. ["Not in SPYJ", "Not in CASH X"].
+    The "Matched" / "Markup/Booking Charges" / "Variance" labels are only
+    assigned when all three sources have data.
+    """
+    missing: list[str] = []
     if not cost_found:
-        return "Not in Cost"
+        missing.append("Not in Cost")
     if not cashx_found:
-        return "Not in CASH X"
+        missing.append("Not in CASH X")
     if not spyj_found:
-        return "Not in SPYJ"
-    return "Variance"
+        missing.append("Not in SPYJ")
+
+    if missing:
+        return missing
+
+    if abs(variance) < _MATCH_TOL:
+        return ["Matched"]
+    if abs(abs(variance) - _MARKUP_VALUE) <= _MARKUP_TOL:
+        return ["Markup/Booking Charges"]
+    return ["Variance"]
 
 
 class ReconciliationService:
@@ -227,12 +239,14 @@ class ReconciliationService:
 
             variance = cost_net - cashx_net - spyj_net
 
-            remark = _assign_remark(
+            remarks = _assign_remarks(
                 variance,
                 cost_found=bool(c),
                 cashx_found=bool(x),
                 spyj_found=bool(s),
             )
+            # Keep the display-cache string in the remark column
+            remark_str = ", ".join(remarks)
 
             rows.append({
                 "uploaded_file_id": result_file_id,
@@ -256,16 +270,22 @@ class ReconciliationService:
                 "spyj_net":    spyj_net,
 
                 "variance":       round(variance, 2),
-                "remark":         remark,
+                "remark":         remark_str,
                 "revised_remark": None,
                 "final_remark":   None,
 
                 "created_at": now,
                 "updated_at": now,
+
+                # Carry the individual labels so we can insert remark rows below
+                "_remarks": remarks,
             })
 
         # Bulk-insert in chunks
         total_inserted = self._bulk_insert(rows)
+
+        # Now insert individual remark rows for every result
+        self._bulk_insert_remarks(rows)
 
         self._db.commit()
         logger.info(
@@ -461,7 +481,11 @@ class ReconciliationService:
     # ------------------------------------------------------------------ #
 
     def _bulk_insert(self, rows: list[dict]) -> int:
-        """Insert *rows* into reconciliation_results in chunks."""
+        """Insert *rows* into reconciliation_results in chunks.
+
+        The ``_remarks`` key (list of remark labels) is stripped before
+        insertion — it is only used by ``_bulk_insert_remarks``.
+        """
         if not rows:
             return 0
 
@@ -469,7 +493,10 @@ class ReconciliationService:
         stmt = insert(ReconciliationResult)
 
         for start in range(0, len(rows), _CHUNK_SIZE):
-            chunk = rows[start : start + _CHUNK_SIZE]
+            chunk = [
+                {k: v for k, v in row.items() if k != "_remarks"}
+                for row in rows[start : start + _CHUNK_SIZE]
+            ]
             self._db.execute(stmt, chunk)
             total += len(chunk)
             logger.debug(
@@ -479,3 +506,43 @@ class ReconciliationService:
             )
 
         return total
+
+    def _bulk_insert_remarks(self, rows: list[dict]) -> None:
+        """Insert one ReconciliationRemark row per label per result.
+
+        Fetches the newly-inserted result IDs by PNR so we can reference them.
+        """
+        if not rows:
+            return
+
+        # Re-fetch the result IDs that were just inserted for this file
+        result_file_id = rows[0]["uploaded_file_id"]
+        pnr_to_id: dict[str, int] = {
+            pnr: rid
+            for pnr, rid in self._db.query(
+                ReconciliationResult.pnr, ReconciliationResult.id
+            )
+            .filter(ReconciliationResult.uploaded_file_id == result_file_id)
+            .all()
+        }
+
+        remark_rows: list[dict] = []
+        for row in rows:
+            result_id = pnr_to_id.get(row["pnr"])
+            if result_id is None:
+                continue
+            for label in row.get("_remarks", []):
+                remark_rows.append({"result_id": result_id, "remark": label})
+
+        if not remark_rows:
+            return
+
+        stmt = insert(ReconciliationRemark)
+        for start in range(0, len(remark_rows), _CHUNK_SIZE):
+            chunk = remark_rows[start : start + _CHUNK_SIZE]
+            self._db.execute(stmt, chunk)
+            logger.debug(
+                "  Inserted reconciliation remark rows %s–%s.",
+                start + 1,
+                start + len(chunk),
+            )

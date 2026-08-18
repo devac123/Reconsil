@@ -15,7 +15,7 @@ GET  /files/{uploaded_file_id}/reconcile/download
 
 import io
 import logging
-from typing import Optional
+from typing import List, Optional
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.models.reconciliation_result import ReconciliationResult
+from app.models.reconciliation_remark import ReconciliationRemark
 from app.models.uploaded_file import UploadedFile
 from app.service.reconciliation_service import ReconciliationService
 
@@ -162,12 +163,11 @@ def get_reconciliation_results(
         description="Filter by PNR (case-insensitive partial match).",
         examples=["KTCKMP"],
     ),
-    remark: Optional[str] = Query(
+    remark: Optional[List[str]] = Query(
         None,
         description=(
-            "Filter by remark (exact match). "
-            "e.g. Matched, Variance, Not in Cost, Not in CASH X, Not in SPYJ, "
-            "Markup/Booking Charges"
+            "Filter by one or more remarks (exact match, repeatable). "
+            "e.g. ?remark=Matched&remark=Variance"
         ),
     ),
     variance_min: Optional[float] = Query(
@@ -189,12 +189,19 @@ def get_reconciliation_results(
         ReconciliationResult.uploaded_file_id == uploaded_file_id
     )
 
+    print(f"remark: {remark}")
+
     # ── Apply filters ──────────────────────────────────────────────────
     if pnr:
         q = q.filter(ReconciliationResult.pnr.ilike(f"%{pnr}%"))
 
     if remark:
-        q = q.filter(ReconciliationResult.remark == remark)
+        # Join to remarks table and match any of the requested labels
+        q = (
+            q.join(ReconciliationRemark, ReconciliationRemark.result_id == ReconciliationResult.id)
+            .filter(ReconciliationRemark.remark.in_(remark))
+            .distinct()
+        )
 
     if variance_min is not None:
         q = q.filter(ReconciliationResult.variance >= variance_min)
@@ -241,6 +248,7 @@ def get_reconciliation_results(
                 "spyj_net":       r.spyj_net,
                 "variance":       r.variance,
                 "remark":         r.remark,
+                "remarks":        [rm.remark for rm in r.remarks],
                 "revised_remark": r.revised_remark,
                 "final_remark":   r.final_remark,
             }
@@ -279,18 +287,19 @@ def get_reconciliation_summary(
         ReconciliationResult.uploaded_file_id == uploaded_file_id
     ).one()
 
-    # Count + variance sum per remark
-    remark_rows = db.query(
-        ReconciliationResult.remark,
-        func.count(ReconciliationResult.id).label("count"),
-        func.sum(ReconciliationResult.variance).label("variance_total"),
-    ).filter(
-        ReconciliationResult.uploaded_file_id == uploaded_file_id
-    ).group_by(
-        ReconciliationResult.remark
-    ).order_by(
-        func.count(ReconciliationResult.id).desc()
-    ).all()
+    # Count + variance sum per remark (from the normalised remarks table)
+    remark_rows = (
+        db.query(
+            ReconciliationRemark.remark,
+            func.count(ReconciliationResult.id.distinct()).label("count"),
+            func.sum(ReconciliationResult.variance).label("variance_total"),
+        )
+        .join(ReconciliationRemark, ReconciliationRemark.result_id == ReconciliationResult.id)
+        .filter(ReconciliationResult.uploaded_file_id == uploaded_file_id)
+        .group_by(ReconciliationRemark.remark)
+        .order_by(func.count(ReconciliationResult.id.distinct()).desc())
+        .all()
+    )
 
     return {
         "uploaded_file_id": uploaded_file_id,
