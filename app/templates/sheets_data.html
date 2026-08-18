@@ -363,6 +363,18 @@
               <option value="not_exist">Not Exist</option>
             </select>
           </div>
+          <!-- Comparison filter -->
+          <div class="flex flex-col gap-[2px]">
+            <label class="font-label-md text-[10px] text-on-surface-variant uppercase tracking-wider">Comparison</label>
+            <select id="recon-filter-comparison"
+                    class="h-[32px] px-sm border border-outline-variant rounded bg-surface
+                           font-body-sm text-body-sm text-on-surface min-w-[120px]
+                           focus:outline-none focus:border-primary">
+              <option value="">All</option>
+              <option value="matched">Matched</option>
+              <option value="variance">Variance</option>
+            </select>
+          </div>
           <!-- PNR search -->
           <div class="flex flex-col gap-[2px]">
             <label class="font-label-md text-[10px] text-on-surface-variant uppercase tracking-wider">PNR</label>
@@ -820,10 +832,11 @@
   // ── Reconciliation source-existence filter helpers ────────────────────────
 
   function clearReconFilters() {
-    document.getElementById('recon-filter-cost').value  = '';
-    document.getElementById('recon-filter-cashx').value = '';
-    document.getElementById('recon-filter-spyj').value  = '';
-    document.getElementById('recon-filter-pnr').value   = '';
+    document.getElementById('recon-filter-cost').value       = '';
+    document.getElementById('recon-filter-cashx').value      = '';
+    document.getElementById('recon-filter-spyj').value       = '';
+    document.getElementById('recon-filter-comparison').value = '';
+    document.getElementById('recon-filter-pnr').value        = '';
     loadReconciliationData(1);
   }
 
@@ -846,15 +859,17 @@
         page_size: reconState.pageSize,
       });
 
-      const costFilter  = document.getElementById('recon-filter-cost').value;
-      const cashxFilter = document.getElementById('recon-filter-cashx').value;
-      const spyjFilter  = document.getElementById('recon-filter-spyj').value;
-      const pnr         = document.getElementById('recon-filter-pnr').value.trim();
+      const costFilter       = document.getElementById('recon-filter-cost').value;
+      const cashxFilter      = document.getElementById('recon-filter-cashx').value;
+      const spyjFilter       = document.getElementById('recon-filter-spyj').value;
+      const comparisonFilter = document.getElementById('recon-filter-comparison').value;
+      const pnr              = document.getElementById('recon-filter-pnr').value.trim();
 
-      if (costFilter)  params.append('cost_filter',  costFilter);
-      if (cashxFilter) params.append('cashx_filter', cashxFilter);
-      if (spyjFilter)  params.append('spyj_filter',  spyjFilter);
-      if (pnr)         params.append('pnr', pnr);
+      if (costFilter)       params.append('cost_filter',  costFilter);
+      if (cashxFilter)      params.append('cashx_filter', cashxFilter);
+      if (spyjFilter)       params.append('spyj_filter',  spyjFilter);
+      if (comparisonFilter) params.append('comparison',   comparisonFilter);
+      if (pnr)              params.append('pnr', pnr);
 
       const resp = await fetch(`/files/${FILE_ID}/reconcile/results?${params}`);
       if (!resp.ok) {

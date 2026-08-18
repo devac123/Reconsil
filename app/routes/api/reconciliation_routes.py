@@ -179,6 +179,15 @@ def get_reconciliation_results(
         None,
         description="Maximum variance value (inclusive).",
     ),
+    # ── Comparison result filter ────────────────────────────────────────
+    comparison: Optional[str] = Query(
+        None,
+        description=(
+            "Filter by comparison outcome (all three sources present). "
+            "'matched' = variance within tolerance; 'variance' = variance outside tolerance."
+        ),
+        pattern="^(matched|variance)$",
+    ),
     # ── Source-existence filters ────────────────────────────────────────
     cost_filter: Optional[str] = Query(
         None,
@@ -250,6 +259,15 @@ def get_reconciliation_results(
     elif spyj_filter == "not_exist":
         q = q.filter(ReconciliationResult.spyj_pnr == "not found")
 
+    # ── Comparison filter (Matched / Variance) ─────────────────────────
+    # Applies only to rows where all three sources are present.
+    # "Matched" and "Variance" are the remark values assigned by the engine
+    # when no source is missing.
+    if comparison == "matched":
+        q = q.filter(ReconciliationResult.remark == "Matched")
+    elif comparison == "variance":
+        q = q.filter(ReconciliationResult.remark == "Variance")
+
     total = q.count()
 
     # ── Pagination ─────────────────────────────────────────────────────
@@ -270,6 +288,7 @@ def get_reconciliation_results(
             "cost_filter":  cost_filter,
             "cashx_filter": cashx_filter,
             "spyj_filter":  spyj_filter,
+            "comparison":   comparison,
         },
         "results": [
             {
