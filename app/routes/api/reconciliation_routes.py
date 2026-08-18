@@ -152,7 +152,8 @@ def run_reconciliation(
     summary="Query reconciliation results with filters",
     description=(
         "Returns a paginated list of reconciled PNR rows. "
-        "Supports filtering by PNR, remark, and variance range."
+        "Supports filtering by PNR, remark, variance range, and per-source "
+        "existence filters (cost_filter, cashx_filter, spyj_filter)."
     ),
 )
 def get_reconciliation_results(
@@ -178,6 +179,31 @@ def get_reconciliation_results(
         None,
         description="Maximum variance value (inclusive).",
     ),
+    # ── Source-existence filters ────────────────────────────────────────
+    cost_filter: Optional[str] = Query(
+        None,
+        description=(
+            "Filter by Cost source existence. "
+            "'exist' = record found in Cost; 'not_exist' = not found in Cost."
+        ),
+        pattern="^(exist|not_exist)$",
+    ),
+    cashx_filter: Optional[str] = Query(
+        None,
+        description=(
+            "Filter by Cash X source existence. "
+            "'exist' = record found in Cash X; 'not_exist' = not found."
+        ),
+        pattern="^(exist|not_exist)$",
+    ),
+    spyj_filter: Optional[str] = Query(
+        None,
+        description=(
+            "Filter by SPYJ source existence. "
+            "'exist' = record found in SPYJ; 'not_exist' = not found."
+        ),
+        pattern="^(exist|not_exist)$",
+    ),
     # ── Pagination ─────────────────────────────────────────────────────
     page: int = Query(1, ge=1, description="Page number (1-based)."),
     page_size: int = Query(50, ge=1, le=500, description="Rows per page (max 500)."),
@@ -188,8 +214,6 @@ def get_reconciliation_results(
     q = db.query(ReconciliationResult).filter(
         ReconciliationResult.uploaded_file_id == uploaded_file_id
     )
-
-    print(f"remark: {remark}")
 
     # ── Apply filters ──────────────────────────────────────────────────
     if pnr:
@@ -209,24 +233,43 @@ def get_reconciliation_results(
     if variance_max is not None:
         q = q.filter(ReconciliationResult.variance <= variance_max)
 
+    # ── Source-existence filters (AND logic, independent per source) ───
+    # cost_pnr == "not found" means the PNR was absent from the Cost sheet
+    if cost_filter == "exist":
+        q = q.filter(ReconciliationResult.cost_pnr != "not found")
+    elif cost_filter == "not_exist":
+        q = q.filter(ReconciliationResult.cost_pnr == "not found")
+
+    if cashx_filter == "exist":
+        q = q.filter(ReconciliationResult.cashx_pnr != "not found")
+    elif cashx_filter == "not_exist":
+        q = q.filter(ReconciliationResult.cashx_pnr == "not found")
+
+    if spyj_filter == "exist":
+        q = q.filter(ReconciliationResult.spyj_pnr != "not found")
+    elif spyj_filter == "not_exist":
+        q = q.filter(ReconciliationResult.spyj_pnr == "not found")
+
     total = q.count()
 
     # ── Pagination ─────────────────────────────────────────────────────
     offset  = (page - 1) * page_size
     records = q.order_by(ReconciliationResult.pnr).offset(offset).limit(page_size).all()
 
-    # print(f"Returning {len(records)} records (page {page} of {max(1, -(-total // page_size))})")
     return {
         "uploaded_file_id": uploaded_file_id,
         "total":            total,
         "page":             page,
         "page_size":        page_size,
-        "total_pages":      -(-total // page_size),  # ceiling division
+        "total_pages":      max(1, -(-total // page_size)),  # ceiling division
         "filters": {
             "pnr":          pnr,
             "remark":       remark,
             "variance_min": variance_min,
             "variance_max": variance_max,
+            "cost_filter":  cost_filter,
+            "cashx_filter": cashx_filter,
+            "spyj_filter":  spyj_filter,
         },
         "results": [
             {

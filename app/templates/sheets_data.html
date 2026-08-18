@@ -327,73 +327,68 @@
           <span id="recon-total-badge" class="text-outline-variant font-data-mono text-data-mono text-[12px]">—</span>
         </div>
         <div class="flex items-center gap-sm flex-wrap">
-          <!-- Remark multi-select filter -->
-          <div class="relative" id="recon-remark-dropdown-wrap">
-            <button type="button"
-                    id="recon-remark-btn"
-                    onclick="toggleRemarkDropdown(event)"
+          <!-- Cost existence filter -->
+          <div class="flex flex-col gap-[2px]">
+            <label class="font-label-md text-[10px] text-on-surface-variant uppercase tracking-wider">Cost</label>
+            <select id="recon-filter-cost"
                     class="h-[32px] px-sm border border-outline-variant rounded bg-surface
-                           font-body-sm text-body-sm text-on-surface flex items-center gap-xs
-                           focus:outline-none focus:border-primary min-w-[140px] justify-between">
-              <span id="recon-remark-label">All Remarks</span>
-              <span class="material-symbols-outlined text-[14px] text-outline">expand_more</span>
-            </button>
-            <!-- Dropdown panel -->
-            <div id="recon-remark-panel"
-                 class="hidden absolute left-0 top-[36px] z-50 bg-surface border border-outline-variant
-                        rounded-lg shadow-lg py-xs min-w-[200px]">
-              <label class="flex items-center gap-sm px-md py-[6px] hover:bg-surface-container cursor-pointer font-body-sm text-body-sm text-on-surface">
-                <input type="checkbox" value="" id="recon-remark-all" onclick="onRemarkAllClick()"
-                       class="accent-primary w-[14px] h-[14px]" checked>
-                <span>All Remarks</span>
-              </label>
-              <div class="border-t border-outline-variant/40 my-xs"></div>
-              <label class="flex items-center gap-sm px-md py-[6px] hover:bg-surface-container cursor-pointer font-body-sm text-body-sm text-on-surface">
-                <input type="checkbox" value="Matched" onchange="onRemarkCheckChange()"
-                       class="recon-remark-chk accent-primary w-[14px] h-[14px]">
-                <span class="inline-flex items-center px-2 py-[1px] rounded text-[11px] font-semibold bg-[#F0FDF4] text-[#166534]">Matched</span>
-              </label>
-              <label class="flex items-center gap-sm px-md py-[6px] hover:bg-surface-container cursor-pointer font-body-sm text-body-sm text-on-surface">
-                <input type="checkbox" value="Variance" onchange="onRemarkCheckChange()"
-                       class="recon-remark-chk accent-primary w-[14px] h-[14px]">
-                <span class="inline-flex items-center px-2 py-[1px] rounded text-[11px] font-semibold bg-[#FEF2F2] text-[#991B1B]">Variance</span>
-              </label>
-              <label class="flex items-center gap-sm px-md py-[6px] hover:bg-surface-container cursor-pointer font-body-sm text-body-sm text-on-surface">
-                <input type="checkbox" value="Not in Cost" onchange="onRemarkCheckChange()"
-                       class="recon-remark-chk accent-primary w-[14px] h-[14px]">
-                <span class="inline-flex items-center px-2 py-[1px] rounded text-[11px] font-semibold bg-[#FFF7ED] text-[#9A3412]">Not in Cost</span>
-              </label>
-              <label class="flex items-center gap-sm px-md py-[6px] hover:bg-surface-container cursor-pointer font-body-sm text-body-sm text-on-surface">
-                <input type="checkbox" value="Not in CASH X" onchange="onRemarkCheckChange()"
-                       class="recon-remark-chk accent-primary w-[14px] h-[14px]">
-                <span class="inline-flex items-center px-2 py-[1px] rounded text-[11px] font-semibold bg-[#FFFBEB] text-[#92400E]">Not in CASH X</span>
-              </label>
-              <label class="flex items-center gap-sm px-md py-[6px] hover:bg-surface-container cursor-pointer font-body-sm text-body-sm text-on-surface">
-                <input type="checkbox" value="Not in SPYJ" onchange="onRemarkCheckChange()"
-                       class="recon-remark-chk accent-primary w-[14px] h-[14px]">
-                <span class="inline-flex items-center px-2 py-[1px] rounded text-[11px] font-semibold bg-[#F5F3FF] text-[#5B21B6]">Not in SPYJ</span>
-              </label>
-              <label class="flex items-center gap-sm px-md py-[6px] hover:bg-surface-container cursor-pointer font-body-sm text-body-sm text-on-surface">
-                <input type="checkbox" value="Markup/Booking Charges" onchange="onRemarkCheckChange()"
-                       class="recon-remark-chk accent-primary w-[14px] h-[14px]">
-                <span class="inline-flex items-center px-2 py-[1px] rounded text-[11px] font-semibold bg-[#EFF6FF] text-[#1D4ED8]">Markup/Booking Charges</span>
-              </label>
-            </div>
+                           font-body-sm text-body-sm text-on-surface min-w-[110px]
+                           focus:outline-none focus:border-primary">
+              <option value="">All</option>
+              <option value="exist">Exist</option>
+              <option value="not_exist">Not Exist</option>
+            </select>
+          </div>
+          <!-- Cash X existence filter -->
+          <div class="flex flex-col gap-[2px]">
+            <label class="font-label-md text-[10px] text-on-surface-variant uppercase tracking-wider">Cash X</label>
+            <select id="recon-filter-cashx"
+                    class="h-[32px] px-sm border border-outline-variant rounded bg-surface
+                           font-body-sm text-body-sm text-on-surface min-w-[110px]
+                           focus:outline-none focus:border-primary">
+              <option value="">All</option>
+              <option value="exist">Exist</option>
+              <option value="not_exist">Not Exist</option>
+            </select>
+          </div>
+          <!-- SPYJ existence filter -->
+          <div class="flex flex-col gap-[2px]">
+            <label class="font-label-md text-[10px] text-on-surface-variant uppercase tracking-wider">SPYJ</label>
+            <select id="recon-filter-spyj"
+                    class="h-[32px] px-sm border border-outline-variant rounded bg-surface
+                           font-body-sm text-body-sm text-on-surface min-w-[110px]
+                           focus:outline-none focus:border-primary">
+              <option value="">All</option>
+              <option value="exist">Exist</option>
+              <option value="not_exist">Not Exist</option>
+            </select>
           </div>
           <!-- PNR search -->
-          <div class="relative">
-            <span class="material-symbols-outlined absolute left-sm top-1/2 -translate-y-1/2 text-outline text-[14px]">search</span>
-            <input id="recon-filter-pnr" type="text" placeholder="PNR…"
-                   class="h-[32px] pl-[28px] pr-sm border border-outline-variant rounded
-                          font-body-sm text-body-sm text-on-surface bg-surface w-[120px]
-                          focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"/>
+          <div class="flex flex-col gap-[2px]">
+            <label class="font-label-md text-[10px] text-on-surface-variant uppercase tracking-wider">PNR</label>
+            <div class="relative">
+              <span class="material-symbols-outlined absolute left-sm top-1/2 -translate-y-1/2 text-outline text-[14px]">search</span>
+              <input id="recon-filter-pnr" type="text" placeholder="Search…"
+                     class="h-[32px] pl-[28px] pr-sm border border-outline-variant rounded
+                            font-body-sm text-body-sm text-on-surface bg-surface w-[120px]
+                            focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"/>
+            </div>
           </div>
-          <button onclick="event.stopPropagation(); loadReconciliationData(1)"
-                  class="h-[32px] px-md bg-primary text-on-primary font-label-md text-label-md
-                         rounded hover:bg-on-primary-fixed-variant transition-colors flex items-center gap-xs">
-            <span class="material-symbols-outlined text-[14px]">filter_alt</span>
-            Filter
-          </button>
+          <div class="flex items-end gap-sm">
+            <button onclick="loadReconciliationData(1)"
+                    class="h-[32px] px-md bg-primary text-on-primary font-label-md text-label-md
+                           rounded hover:bg-on-primary-fixed-variant transition-colors flex items-center gap-xs">
+              <span class="material-symbols-outlined text-[14px]">filter_alt</span>
+              Filter
+            </button>
+            <button onclick="clearReconFilters()"
+                    class="h-[32px] px-sm border border-outline-variant text-on-surface-variant
+                           font-label-md text-label-md rounded hover:bg-surface-container
+                           transition-colors flex items-center gap-xs"
+                    title="Clear filters">
+              <span class="material-symbols-outlined text-[14px]">close</span>
+            </button>
+          </div>
           <!-- Run Reconciliation -->
           <button onclick="runReconciliation()"
                   id="recon-run-btn"
@@ -609,6 +604,11 @@
     });
   });
 
+  // Reconciliation PNR: Enter key triggers filter
+  document.getElementById('recon-filter-pnr')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') loadReconciliationData(1);
+  });
+
   // ── Tab switching ──────────────────────────────────────────────────────────
   function switchSheet(sheetId) {
     // Hide all panels
@@ -817,63 +817,19 @@
     }
   }
 
-  // ── Remark multi-select dropdown helpers ──────────────────────────────────
+  // ── Reconciliation source-existence filter helpers ────────────────────────
 
-  function toggleRemarkDropdown(e) {
-    e.stopPropagation();
-    document.getElementById('recon-remark-panel').classList.toggle('hidden');
-  }
-
-  // Close dropdown when clicking outside
-  document.addEventListener('click', function(e) {
-    const wrap = document.getElementById('recon-remark-dropdown-wrap');
-    if (wrap && !wrap.contains(e.target)) {
-      document.getElementById('recon-remark-panel').classList.add('hidden');
-    }
-  });
-
-  function getSelectedRemarks() {
-    const checked = document.querySelectorAll('.recon-remark-chk:checked');
-    return Array.from(checked).map(c => c.value);
-  }
-
-  function updateRemarkLabel() {
-    const selected = getSelectedRemarks();
-    const label = document.getElementById('recon-remark-label');
-    if (selected.length === 0) {
-      label.textContent = 'All Remarks';
-    } else if (selected.length === 1) {
-      label.textContent = selected[0];
-    } else {
-      label.textContent = `${selected.length} selected`;
-    }
-  }
-
-  // Clicking the "All Remarks" row clears all individual selections
-  function onRemarkAllClick() {
-    document.querySelectorAll('.recon-remark-chk').forEach(c => c.checked = false);
-    // Keep "All" visually checked
-    const allChk = document.getElementById('recon-remark-all');
-    allChk.checked = true;
-    updateRemarkLabel();
-  }
-
-  function onRemarkCheckChange() {
-    const allChk = document.getElementById('recon-remark-all');
-    const selected = getSelectedRemarks();
-    // Sync "All Remarks" tick: checked only when nothing else is selected
-    // Use property assignment (does not fire onchange/onclick)
-    allChk.checked = (selected.length === 0);
-    updateRemarkLabel();
+  function clearReconFilters() {
+    document.getElementById('recon-filter-cost').value  = '';
+    document.getElementById('recon-filter-cashx').value = '';
+    document.getElementById('recon-filter-spyj').value  = '';
+    document.getElementById('recon-filter-pnr').value   = '';
+    loadReconciliationData(1);
   }
 
   async function loadReconciliationData(page) {
     if (page < 1 || page > reconState.totalPages) return;
     reconState.page = page;
-
-    // Close the remark dropdown if open (values already read before this runs)
-    const panel = document.getElementById('recon-remark-panel');
-    if (panel) panel.classList.add('hidden');
 
     const tbody = document.getElementById('recon-tbody');
     tbody.innerHTML = `
@@ -889,10 +845,16 @@
         page:      reconState.page,
         page_size: reconState.pageSize,
       });
-      const selectedRemarks = getSelectedRemarks();
-      const pnr    = document.getElementById('recon-filter-pnr').value.trim();
-      selectedRemarks.forEach(r => params.append('remark', r));
-      if (pnr)    params.append('pnr', pnr);
+
+      const costFilter  = document.getElementById('recon-filter-cost').value;
+      const cashxFilter = document.getElementById('recon-filter-cashx').value;
+      const spyjFilter  = document.getElementById('recon-filter-spyj').value;
+      const pnr         = document.getElementById('recon-filter-pnr').value.trim();
+
+      if (costFilter)  params.append('cost_filter',  costFilter);
+      if (cashxFilter) params.append('cashx_filter', cashxFilter);
+      if (spyjFilter)  params.append('spyj_filter',  spyjFilter);
+      if (pnr)         params.append('pnr', pnr);
 
       const resp = await fetch(`/files/${FILE_ID}/reconcile/results?${params}`);
       if (!resp.ok) {
@@ -936,12 +898,21 @@
         'Markup/Booking Charges': 'bg-[#EFF6FF] text-[#1D4ED8]',
       };
 
+      function renderRemarks(remarks) {
+        if (!remarks || !remarks.length) return '<span class="text-on-surface-variant">—</span>';
+        return remarks.map(r => {
+          const cls = remarkColors[r] || 'bg-surface-container text-on-surface';
+          return `<span class="inline-flex items-center px-2 py-[2px] rounded text-[11px] font-semibold ${cls}">${escapeHtml(r)}</span>`;
+        }).join(' ');
+      }
+
       let rowNum = start;
       tbody.innerHTML = data.results.map(r => {
         const varClass = r.variance > 0.99 || r.variance < -0.99
           ? 'text-error font-semibold' : 'text-[#166534]';
-        const remarkCls = remarkColors[r.remark] || 'bg-surface-container text-on-surface';
         const bookingDate = r.booking_date ? r.booking_date : '—';
+        // Use the remarks array for display (supports multiple remarks per PNR)
+        const displayRemarks = (r.remarks && r.remarks.length) ? r.remarks : (r.remark ? [r.remark] : []);
         return `
           <tr class="border-b border-outline-variant/30 h-[40px] transition-colors hover:bg-surface-container-low">
             <td class="px-md py-sm font-data-mono text-data-mono text-on-surface-variant text-center border-r border-outline-variant/50 w-[60px]">${rowNum++}</td>
@@ -959,9 +930,9 @@
             <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap border-r border-outline-variant/50">${fmt(r.spyj_net)}</td>
             <td class="px-md py-sm font-data-mono text-data-mono text-right whitespace-nowrap ${varClass}">${fmt(r.variance)}</td>
             <td class="px-md py-sm whitespace-nowrap">
-              <span class="inline-flex items-center px-2 py-[2px] rounded text-[11px] font-semibold ${remarkCls}">
-                ${escapeHtml(r.remark)}
-              </span>
+              <div class="flex flex-wrap gap-[3px]">
+                ${renderRemarks(displayRemarks)}
+              </div>
             </td>
           </tr>`;
       }).join('');
@@ -1015,7 +986,8 @@
   }
 
   function filterByRemark(remark) {
-    document.getElementById('recon-filter-remark').value = remark;
+    // Set the source-existence filters based on the remark chip clicked
+    // (summary chips are informational; clicking them just scrolls/highlights)
     loadReconciliationData(1);
   }
 
