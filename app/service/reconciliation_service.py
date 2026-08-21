@@ -43,7 +43,7 @@ For a given uploaded file the engine:
 
 import logging
 from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import insert, text
 from sqlalchemy.orm import Session
@@ -83,6 +83,40 @@ def _safe_float(value) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _safe_date(value) -> date | None:
+    """Convert common Excel/pandas/string date values to a Python date."""
+    if value is None:
+        return None
+    try:
+        import pandas as _pd
+        if _pd.isna(value):
+            return None
+        if isinstance(value, _pd.Timestamp):
+            return value.date()
+    except (ImportError, TypeError, ValueError):
+        pass
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        s = value.strip()
+        if not s or s.lower() in ("nan", "none", "nat"):
+            return None
+        try:
+            return datetime.fromisoformat(s[:10]).date()
+        except ValueError:
+            return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            n = int(value)
+            if 1 <= n <= 2958465:
+                return date(1899, 12, 30) + timedelta(days=n)
+        except (ValueError, OverflowError):
+            return None
+    return None
 
 
 def _assign_remarks(
@@ -374,8 +408,9 @@ class ReconciliationService:
             # Capture BookingDate (first non-null value wins)
             if agg[pnr]["booking_date"] is None:
                 raw_date = raw.get("BookingDate") or raw.get("Booking Date") or raw.get("booking_date")
-                if raw_date and str(raw_date).strip().lower() not in ("nan", "none", ""):
-                    agg[pnr]["booking_date"] = raw_date
+                booking_date = _safe_date(raw_date)
+                if booking_date:
+                    agg[pnr]["booking_date"] = booking_date
 
             # Capture customer/passenger name from Name1 (first non-null wins)
             if agg[pnr]["customer_name"] is None:

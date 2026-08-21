@@ -306,6 +306,7 @@ def sheets_data_page(
     return templates.TemplateResponse(request, "sheets_data.html", {
         "active_page":   "uploaded_files",
         "uploaded_file": uploaded_file,
+        "uploaded_file_ids": file_ids,
         "sheets":        list(grouped_sheets.values()),
     })
 
