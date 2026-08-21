@@ -33,8 +33,6 @@ from app.database.session import get_db
 from app.models.staging_record import StagingRecord
 from app.models.uploaded_file import UploadedFile
 from app.models.uploaded_sheet import UploadedSheet
-from app.repository.staging_record_repository import StagingRecordRepository
-from app.repository.uploaded_sheet_repository import UploadedSheetRepository
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +51,56 @@ def _get_file_or_404(uploaded_file_id: int, db: Session) -> UploadedFile:
             detail=f"UploadedFile with id={uploaded_file_id} not found.",
         )
     return file
+
+
+def _batch_file_ids(uploaded_file: UploadedFile, db: Session) -> list[int]:
+    """Return all file IDs that should be viewed as one logical upload."""
+    if not uploaded_file.batch_id:
+        return [uploaded_file.id]
+
+    rows = (
+        db.query(UploadedFile.id)
+        .filter(UploadedFile.batch_id == uploaded_file.batch_id)
+        .order_by(UploadedFile.uploaded_at, UploadedFile.id)
+        .all()
+    )
+    return [row[0] for row in rows]
+
+
+def _sheet_group_ids(
+    uploaded_file: UploadedFile,
+    sheet_id: int,
+    db: Session,
+) -> tuple[UploadedSheet, list[int]]:
+    """Resolve a visible sheet tab to all same-name sheets in the upload batch."""
+    file_ids = _batch_file_ids(uploaded_file, db)
+    sheet = (
+        db.query(UploadedSheet)
+        .filter(
+            UploadedSheet.id == sheet_id,
+            UploadedSheet.uploaded_file_id.in_(file_ids),
+        )
+        .first()
+    )
+    if not sheet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sheet id={sheet_id} not found for file id={uploaded_file.id}.",
+        )
+
+    grouped_sheet_ids = [
+        row[0]
+        for row in (
+            db.query(UploadedSheet.id)
+            .filter(
+                UploadedSheet.uploaded_file_id.in_(file_ids),
+                UploadedSheet.sheet_name == sheet.sheet_name,
+            )
+            .order_by(UploadedSheet.uploaded_file_id, UploadedSheet.sheet_index)
+            .all()
+        )
+    ]
+    return sheet, grouped_sheet_ids
 
 
 def _sheet_payload(
@@ -103,6 +151,11 @@ def _apply_filters(
     """
     from sqlalchemy import or_, func, cast
     from sqlalchemy.dialects.mysql import LONGTEXT
+
+    # Ignore staged rows whose raw_data contains no real cell value. This
+    # protects older uploads where whitespace-only Excel rows may have been
+    # inserted before dataframe cleanup was tightened.
+    q = q.filter(func.json_search(StagingRecord.raw_data, "one", "%_%").isnot(None))
 
     if pnr:
         q = q.filter(
@@ -163,10 +216,15 @@ def get_all_sheets_data(
     page_size: int = Query(50, ge=1, le=500, description="Rows per page (max 500)."),
     db: Session = Depends(get_db),
 ):
-    _get_file_or_404(uploaded_file_id, db)
+    uploaded_file = _get_file_or_404(uploaded_file_id, db)
+    file_ids = _batch_file_ids(uploaded_file, db)
 
-    sheet_repo = UploadedSheetRepository(db)
-    sheets     = sheet_repo.get_by_uploaded_file(uploaded_file_id)
+    sheets = (
+        db.query(UploadedSheet)
+        .filter(UploadedSheet.uploaded_file_id.in_(file_ids))
+        .order_by(UploadedSheet.sheet_index, UploadedSheet.uploaded_file_id)
+        .all()
+    )
 
     if not sheets:
         raise HTTPException(
@@ -176,10 +234,16 @@ def get_all_sheets_data(
 
     skip   = (page - 1) * page_size
     result = []
+    grouped: dict[str, list[UploadedSheet]] = {}
 
     for sheet in sheets:
+        grouped.setdefault(sheet.sheet_name, []).append(sheet)
+
+    for sheet_group in grouped.values():
+        sheet = sheet_group[0]
+        sheet_ids = [item.id for item in sheet_group]
         base_q = db.query(StagingRecord).filter(
-            StagingRecord.uploaded_sheet_id == sheet.id
+            StagingRecord.uploaded_sheet_id.in_(sheet_ids)
         )
         base_q = _apply_filters(
             base_q, pnr, ticket_number, date_from, date_to, is_processed
@@ -188,7 +252,7 @@ def get_all_sheets_data(
         total   = base_q.count()
         records = (
             base_q
-            .order_by(StagingRecord.row_number)
+            .order_by(StagingRecord.uploaded_sheet_id, StagingRecord.row_number)
             .offset(skip)
             .limit(page_size)
             .all()
@@ -197,7 +261,7 @@ def get_all_sheets_data(
 
     return {
         "uploaded_file_id": uploaded_file_id,
-        "total_sheets":     len(sheets),
+        "total_sheets":     len(result),
         "filters": {
             "pnr":          pnr,
             "ticket_number": ticket_number,
@@ -244,24 +308,11 @@ def get_single_sheet_data(
     page_size: int = Query(50, ge=1, le=500, description="Rows per page (max 500)."),
     db: Session = Depends(get_db),
 ):
-    _get_file_or_404(uploaded_file_id, db)
-
-    sheet = (
-        db.query(UploadedSheet)
-        .filter(
-            UploadedSheet.id == sheet_id,
-            UploadedSheet.uploaded_file_id == uploaded_file_id,
-        )
-        .first()
-    )
-    if not sheet:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Sheet id={sheet_id} not found for file id={uploaded_file_id}.",
-        )
+    uploaded_file = _get_file_or_404(uploaded_file_id, db)
+    sheet, grouped_sheet_ids = _sheet_group_ids(uploaded_file, sheet_id, db)
 
     base_q = db.query(StagingRecord).filter(
-        StagingRecord.uploaded_sheet_id == sheet.id
+        StagingRecord.uploaded_sheet_id.in_(grouped_sheet_ids)
     )
     base_q = _apply_filters(
         base_q, pnr, ticket_number, date_from, date_to, is_processed
@@ -271,7 +322,7 @@ def get_single_sheet_data(
     skip    = (page - 1) * page_size
     records = (
         base_q
-        .order_by(StagingRecord.row_number)
+        .order_by(StagingRecord.uploaded_sheet_id, StagingRecord.row_number)
         .offset(skip)
         .limit(page_size)
         .all()

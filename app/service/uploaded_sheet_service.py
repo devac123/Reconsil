@@ -96,12 +96,16 @@ class UploadedSheetService:
             for index, sheet_info in enumerate(sheets_data):
                 sheet_name: str = sheet_info["name"]
 
-                # "rows" is the integer max_row reported by openpyxl
-                total_rows: int = sheet_info.get("rows") or 0
+                df = FileReaderService.read_sheet_as_dataframe(
+                    path,
+                    sheet_name,
+                    header_row=sheet_info.get("header_row"),
+                )
 
-                # "columns" is a list of header strings; count gives total cols
-                columns_list: list = sheet_info.get("columns") or []
-                total_columns: int = len(columns_list)
+                # Count only actual dataframe data rows. The header row is
+                # used as column names and is not included in len(df).
+                total_rows: int = len(df)
+                total_columns: int = len(df.columns)
 
                 logger.debug(
                     "  Sheet[%s] '%s' — rows=%s, columns=%s",

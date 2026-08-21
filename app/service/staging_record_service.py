@@ -103,16 +103,31 @@ def _field_map_for(sheet_name: str) -> dict[str, str | None]:
 # Value coercion helpers
 # ---------------------------------------------------------------------------
 
+def _is_null_like(value: Any) -> bool:
+    """Return True for Python, pandas, and numpy missing scalar values."""
+    if value is None:
+        return True
+    if isinstance(value, float) and math.isnan(value):
+        return True
+    try:
+        import pandas as _pd
+        result = _pd.isna(value)
+        if isinstance(result, bool):
+            return result
+        type_name = type(result).__module__
+        if type_name == "numpy":
+            return bool(getattr(result, "item", lambda: False)())
+    except (ImportError, TypeError, ValueError):
+        pass
+    return False
+
+
 def _make_json_safe(value: Any) -> Any:
     """Coerce *value* to a DB JSON-serialisable Python type."""
-    if value is None:
-        return None
-    if isinstance(value, float) and math.isnan(value):
+    if _is_null_like(value):
         return None
     try:
         import pandas as _pd
-        if value is _pd.NaT:
-            return None
         if isinstance(value, _pd.Timestamp):
             return value.isoformat()
     except ImportError:
@@ -133,14 +148,10 @@ def _row_to_dict(columns: list[str], values) -> dict:
 
 def _to_date_str(value: Any) -> str | None:
     """Coerce *value* to an ISO-8601 date string or ``None``."""
-    if value is None:
-        return None
-    if isinstance(value, float) and math.isnan(value):
+    if _is_null_like(value):
         return None
     try:
         import pandas as _pd
-        if value is _pd.NaT:
-            return None
         if isinstance(value, _pd.Timestamp):
             return value.date().isoformat()
     except ImportError:
@@ -190,7 +201,7 @@ def _safe_str(value: Any, max_len: int, field_label: str, row_number: int) -> st
     When truncation occurs a WARNING is logged so the operator can identify
     rows where the value was clipped.  Returns ``None`` for null-like values.
     """
-    if value is None:
+    if _is_null_like(value):
         return None
     s = str(value).strip()
     if not s:

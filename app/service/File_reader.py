@@ -160,17 +160,21 @@ class FileReaderService:
             dtype=object,        # keep every value as Python object; no auto-cast
         )
 
-        # Drop rows where every column is NaN — truly empty rows
-        df = df.dropna(how="all")
-
         # Ensure all column names are plain strings (openpyxl can return ints)
         df.columns = [str(col) for col in df.columns]
 
         # Drop columns whose header is "Unnamed: X" — these come from merged
         # title cells or genuinely missing column names and should not be stored.
-        unnamed_cols = [c for c in df.columns if c.startswith("Unnamed:")]
+        unnamed_cols = [c for c in df.columns if c.startswith("Unnamed:") or not c.strip()]
         if unnamed_cols:
             df = df.drop(columns=unnamed_cols)
+
+        # Treat whitespace-only cells as empty, then drop rows where every
+        # remaining data column is empty. This keeps sheet counts aligned with
+        # visible data rows instead of Excel's used-range metadata.
+        df = df.replace(r"^\s*$", pd.NA, regex=True)
+        df = df.dropna(how="all")
+        df = df.astype(object).where(pd.notna(df), None)
 
         return df
 

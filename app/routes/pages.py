@@ -26,10 +26,12 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.models.organization import Organization
+from app.models.staging_record import StagingRecord
 from app.models.upload_batch import UploadBatch
 from app.models.uploaded_file import UploadedFile, UploadStatus
 from app.models.uploaded_sheet import UploadedSheet
@@ -257,17 +259,54 @@ def sheets_data_page(
     if not uploaded_file:
         raise HTTPException(status_code=404, detail="Uploaded file not found")
 
-    sheets = (
+    file_ids = [uploaded_file.id]
+    if uploaded_file.batch_id:
+        file_ids = [
+            row[0]
+            for row in (
+                db.query(UploadedFile.id)
+                .filter(UploadedFile.batch_id == uploaded_file.batch_id)
+                .order_by(UploadedFile.uploaded_at, UploadedFile.id)
+                .all()
+            )
+        ]
+
+    source_sheets = (
         db.query(UploadedSheet)
-        .filter(UploadedSheet.uploaded_file_id == uploaded_file_id)
-        .order_by(UploadedSheet.sheet_index)
+        .filter(UploadedSheet.uploaded_file_id.in_(file_ids))
+        .order_by(UploadedSheet.sheet_index, UploadedSheet.uploaded_file_id)
         .all()
     )
+
+    grouped_sheets: dict[str, dict] = {}
+    for sheet in source_sheets:
+        item = grouped_sheets.setdefault(
+            sheet.sheet_name,
+            {
+                "id": sheet.id,
+                "sheet_name": sheet.sheet_name,
+                "sheet_index": sheet.sheet_index,
+                "total_rows": 0,
+                "total_columns": sheet.total_columns,
+                "sheet_ids": [],
+            },
+        )
+        item["total_columns"] = max(item["total_columns"], sheet.total_columns)
+        item["sheet_ids"].append(sheet.id)
+
+    for item in grouped_sheets.values():
+        item["total_rows"] = (
+            db.query(StagingRecord)
+            .filter(StagingRecord.uploaded_sheet_id.in_(item["sheet_ids"]))
+            .filter(func.json_search(StagingRecord.raw_data, "one", "%_%").isnot(None))
+            .count()
+        )
+        del item["sheet_ids"]
 
     return templates.TemplateResponse(request, "sheets_data.html", {
         "active_page":   "uploaded_files",
         "uploaded_file": uploaded_file,
-        "sheets":        sheets,
+        "sheets":        list(grouped_sheets.values()),
     })
 
 
