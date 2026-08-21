@@ -26,11 +26,13 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.models.organization import Organization
+from app.models.reconciliation_remark import ReconciliationRemark
+from app.models.reconciliation_result import ReconciliationResult
 from app.models.staging_record import StagingRecord
 from app.models.upload_batch import UploadBatch
 from app.models.uploaded_file import UploadedFile, UploadStatus
@@ -55,6 +57,127 @@ def _get_file_stats(db: Session) -> dict:
         "processing_files":    db.query(UploadedFile).filter(UploadedFile.upload_status == UploadStatus.PROCESSING).count(),
         "processed_files":     db.query(UploadedFile).filter(UploadedFile.upload_status == UploadStatus.PROCESSED).count(),
         "failed_files":        db.query(UploadedFile).filter(UploadedFile.upload_status == UploadStatus.FAILED).count(),
+    }
+
+
+def _money(value: float | int | None) -> str:
+    return f"{float(value or 0):,.2f}"
+
+
+def _get_reconciliation_dashboard(db: Session) -> dict:
+    totals = db.query(
+        func.count(ReconciliationResult.id).label("total_pnrs"),
+        func.sum(ReconciliationResult.cost_sale).label("cost_sale"),
+        func.sum(ReconciliationResult.cost_refund).label("cost_refund"),
+        func.sum(ReconciliationResult.cost_net).label("cost_net"),
+        func.sum(ReconciliationResult.cashx_amount).label("cashx_sale"),
+        func.sum(ReconciliationResult.cashx_refund).label("cashx_refund"),
+        func.sum(ReconciliationResult.cashx_net).label("cashx_net"),
+        func.sum(ReconciliationResult.spyj_amount).label("spyj_sale"),
+        func.sum(ReconciliationResult.spyj_refund).label("spyj_refund"),
+        func.sum(ReconciliationResult.spyj_net).label("spyj_net"),
+        func.sum(ReconciliationResult.variance).label("variance"),
+    ).one()
+
+    total_pnrs = totals.total_pnrs or 0
+    cost_net = float(totals.cost_net or 0)
+    cashx_net = float(totals.cashx_net or 0)
+    spyj_net = float(totals.spyj_net or 0)
+    revenue_net = cashx_net + spyj_net
+    variance = float(totals.variance or 0)
+
+    remark_rows = (
+        db.query(
+            ReconciliationRemark.remark,
+            func.count(ReconciliationRemark.id).label("count"),
+        )
+        .join(ReconciliationResult, ReconciliationResult.id == ReconciliationRemark.result_id)
+        .group_by(ReconciliationRemark.remark)
+        .order_by(func.count(ReconciliationRemark.id).desc())
+        .all()
+    )
+    remarks = [{"remark": row.remark or "Unassigned", "count": row.count or 0} for row in remark_rows]
+    remark_map = {item["remark"]: item["count"] for item in remarks}
+
+    sources = [
+        {
+            "name": "AIR COST TRN",
+            "sale": float(totals.cost_sale or 0),
+            "refund": float(totals.cost_refund or 0),
+            "net": cost_net,
+            "percent": 100.0,
+        },
+        {
+            "name": "CASH X",
+            "sale": float(totals.cashx_sale or 0),
+            "refund": float(totals.cashx_refund or 0),
+            "net": cashx_net,
+            "percent": (abs(cashx_net) / abs(cost_net) * 100) if cost_net else 0,
+        },
+        {
+            "name": "SPYJ Online",
+            "sale": float(totals.spyj_sale or 0),
+            "refund": float(totals.spyj_refund or 0),
+            "net": spyj_net,
+            "percent": (abs(spyj_net) / abs(cost_net) * 100) if cost_net else 0,
+        },
+    ]
+
+    matched = remark_map.get("Matched", 0)
+    variance_count = remark_map.get("Variance", 0)
+    missing = max(total_pnrs - matched - variance_count, 0)
+    source_counts = db.query(
+        func.sum(case((ReconciliationResult.cost_pnr != "not found", 1), else_=0)).label("air_cost"),
+        func.sum(case((ReconciliationResult.cashx_pnr != "not found", 1), else_=0)).label("cashx"),
+        func.sum(case((ReconciliationResult.spyj_pnr != "not found", 1), else_=0)).label("spyj"),
+    ).one()
+
+    air_cost_count = int(source_counts.air_cost or 0)
+    cashx_count = int(source_counts.cashx or 0)
+    spyj_count = int(source_counts.spyj or 0)
+
+    return {
+        "total_pnrs": total_pnrs,
+        "cost_net": cost_net,
+        "revenue_net": revenue_net,
+        "variance": variance,
+        "cost_net_display": _money(cost_net),
+        "revenue_net_display": _money(revenue_net),
+        "variance_display": _money(variance),
+        "remarks": remarks,
+        "remark_map": remark_map,
+        "max_remark_count": max([item["count"] for item in remarks] or [1]),
+        "booking_counts": {
+            "air_cost": air_cost_count,
+            "cashx": cashx_count,
+            "spyj": spyj_count,
+            "other_portal": spyj_count,
+            "matched": matched,
+            "variance": variance_count,
+            "air_cost_pct": (air_cost_count / total_pnrs * 100) if total_pnrs else 0,
+            "cashx_pct": (cashx_count / total_pnrs * 100) if total_pnrs else 0,
+            "spyj_pct": (spyj_count / total_pnrs * 100) if total_pnrs else 0,
+            "matched_pct": (matched / total_pnrs * 100) if total_pnrs else 0,
+            "variance_pct": (variance_count / total_pnrs * 100) if total_pnrs else 0,
+        },
+        "sources": [
+            {
+                **source,
+                "sale_display": _money(source["sale"]),
+                "refund_display": _money(source["refund"]),
+                "net_display": _money(source["net"]),
+                "percent_display": f"{source['percent']:.2f}%",
+            }
+            for source in sources
+        ],
+        "distribution": {
+            "matched": matched,
+            "variance": variance_count,
+            "missing": missing,
+            "matched_pct": (matched / total_pnrs * 100) if total_pnrs else 0,
+            "variance_pct": (variance_count / total_pnrs * 100) if total_pnrs else 0,
+            "missing_pct": (missing / total_pnrs * 100) if total_pnrs else 0,
+        },
     }
 
 
@@ -123,12 +246,12 @@ def _build_uploaded_file_items(files: list[UploadedFile]) -> list[dict]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Root → Upload redirect
+# Root → Dashboard redirect
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/", response_class=RedirectResponse)
 def root_redirect():
-    return RedirectResponse(url="/upload")
+    return RedirectResponse(url="/dashboard")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -149,6 +272,7 @@ def upload_page(request: Request):
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard_page(request: Request, db: Session = Depends(get_db)):
     stats = _get_file_stats(db)
+    recon_summary = _get_reconciliation_dashboard(db)
     recent_files = (
         db.query(UploadedFile)
         .order_by(UploadedFile.uploaded_at.desc())
@@ -158,6 +282,7 @@ def dashboard_page(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(request, "dashboard.html", {
         "active_page":  "dashboard",
         "stats":        stats,
+        "recon_summary": recon_summary,
         "recent_files": recent_files,
     })
 

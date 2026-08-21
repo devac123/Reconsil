@@ -137,15 +137,15 @@
         </a>
 
         <nav class="hidden md:flex items-center h-full">
-          <a href="/upload"
-             class="h-full flex items-center font-label-md text-label-md px-sm transition-colors
-                    {% if active_page == 'upload' %}text-primary border-b-2 border-primary{% else %}text-on-surface-variant hover:bg-surface-container{% endif %}">
-            Upload
-          </a>
           <a href="/dashboard"
              class="h-full flex items-center font-label-md text-label-md px-sm transition-colors
                     {% if active_page == 'dashboard' %}text-primary border-b-2 border-primary{% else %}text-on-surface-variant hover:bg-surface-container{% endif %}">
             Dashboard
+          </a>
+          <a href="/upload"
+             class="h-full flex items-center font-label-md text-label-md px-sm transition-colors
+                    {% if active_page == 'upload' %}text-primary border-b-2 border-primary{% else %}text-on-surface-variant hover:bg-surface-container{% endif %}">
+            Upload
           </a>
           <a href="/organizations"
              class="h-full flex items-center font-label-md text-label-md px-sm transition-colors

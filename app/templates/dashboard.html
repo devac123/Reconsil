@@ -1,220 +1,234 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard – ReconSystem{% endblock %}
+{% block title %}Dashboard - ReconSystem{% endblock %}
+
+{% block extra_styles %}
+.dashboard-panel { border-radius: 4px; }
+.metric-card { min-height: 116px; }
+{% endblock %}
 
 {% block content %}
+{% set r = recon_summary %}
 <main class="max-w-[1440px] mx-auto px-margin py-lg flex flex-col gap-lg">
 
-  <!-- Page Header -->
   <header class="flex flex-col md:flex-row md:items-end justify-between gap-md">
     <div>
-      <h1 class="font-display-sm text-display-sm text-on-surface mb-xs">System Overview</h1>
-      <p class="font-body-sm text-body-sm text-on-surface-variant">
-        Real-time metrics for reconciliation operations.
+      <h1 class="font-headline-md text-headline-md text-on-surface">Reconciliation Summary</h1>
+      <p class="font-body-sm text-body-sm text-on-surface-variant mt-xs">
+        Complete summary across all reconciliation result records.
       </p>
+    </div>
+    <div class="flex flex-wrap gap-sm">
+      <a href="/upload"
+         class="h-[36px] px-md bg-primary text-on-primary font-label-md text-label-md rounded
+                hover:bg-on-primary-fixed-variant transition-colors flex items-center gap-xs">
+        <span class="material-symbols-outlined text-[16px]">upload</span>
+        Upload Files
+      </a>
+      <a href="/uploaded-files"
+         class="h-[36px] px-md bg-surface-container-lowest border border-outline-variant
+                text-on-surface font-label-md text-label-md rounded hover:bg-surface-container
+                transition-colors flex items-center gap-xs">
+        <span class="material-symbols-outlined text-[16px]">folder_open</span>
+        Files
+      </a>
     </div>
   </header>
 
-  <!-- Bento Metrics Grid -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-md">
-
-    <!-- Total Organizations -->
-    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col gap-sm
-                hover:bg-surface-container-low transition-colors">
-      <div class="flex justify-between items-start">
-        <span class="font-label-md text-label-md text-on-surface-variant uppercase">Total Organizations</span>
-        <span class="material-symbols-outlined text-outline-variant">domain</span>
+  <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-md">
+    <div class="metric-card bg-surface-container-lowest border border-outline-variant dashboard-panel p-lg flex flex-col justify-between">
+      <div class="flex items-start justify-between gap-md">
+        <span class="font-label-md text-label-md text-on-surface-variant uppercase">Total Unique PNRs Reconciled</span>
+        <span class="material-symbols-outlined text-outline">confirmation_number</span>
       </div>
-      <div class="font-display-sm text-display-sm text-on-surface font-data-mono" id="stat-orgs">
-        {{ stats.total_organizations if stats else '—' }}
-      </div>
-      <a href="/organizations" class="font-body-sm text-body-sm text-primary flex items-center gap-xs hover:underline">
-        View all <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
-      </a>
+      <p class="font-headline-md text-headline-md text-primary font-data-mono">{{ "{:,}".format(r.total_pnrs) }}</p>
     </div>
 
-    <!-- Files Uploaded -->
-    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col gap-sm
-                hover:bg-surface-container-low transition-colors">
-      <div class="flex justify-between items-start">
-        <span class="font-label-md text-label-md text-on-surface-variant uppercase">Files Uploaded</span>
-        <span class="material-symbols-outlined text-outline-variant">upload_file</span>
+    <div class="metric-card bg-surface-container-lowest border border-outline-variant dashboard-panel p-lg flex flex-col justify-between">
+      <div class="flex items-start justify-between gap-md">
+        <span class="font-label-md text-label-md text-on-surface-variant uppercase">Air Cost TRN Net</span>
+        <span class="material-symbols-outlined text-primary">flight</span>
       </div>
-      <div class="font-display-sm text-display-sm text-on-surface font-data-mono" id="stat-files">
-        {{ stats.total_files if stats else '—' }}
-      </div>
-      <a href="/uploaded-files" class="font-body-sm text-body-sm text-primary flex items-center gap-xs hover:underline">
-        View all <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
-      </a>
+      <p class="font-headline-md text-headline-md text-primary font-data-mono">₹ {{ r.cost_net_display }}</p>
     </div>
 
-    <!-- Processing -->
-    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col gap-sm
-                hover:bg-surface-container-low transition-colors">
-      <div class="flex justify-between items-start">
-        <span class="font-label-md text-label-md text-on-surface-variant uppercase">Processing</span>
-        <span class="material-symbols-outlined text-outline-variant">autorenew</span>
+    <div class="metric-card bg-surface-container-lowest border border-outline-variant dashboard-panel p-lg flex flex-col justify-between">
+      <div class="flex items-start justify-between gap-md">
+        <span class="font-label-md text-label-md text-on-surface-variant uppercase">Cash X + SPYJ Net</span>
+        <span class="material-symbols-outlined text-[#166534]">account_balance</span>
       </div>
-      <div class="font-display-sm text-display-sm text-on-surface font-data-mono">
-        {{ stats.processing_files if stats else '—' }}
-      </div>
-      <div class="flex items-center gap-xs font-body-sm text-body-sm">
-        <span class="w-[8px] h-[8px] rounded-full bg-[#92400E]"></span>
-        <span class="text-on-surface-variant">Active pipelines</span>
-      </div>
+      <p class="font-headline-md text-headline-md text-primary font-data-mono">₹ {{ r.revenue_net_display }}</p>
     </div>
 
-    <!-- Failed -->
-    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col gap-sm
-                hover:bg-surface-container-low transition-colors">
-      <div class="flex justify-between items-start">
-        <span class="font-label-md text-label-md text-on-surface-variant uppercase">Failed</span>
-        <span class="material-symbols-outlined text-error">error</span>
+    <div class="metric-card bg-surface-container-lowest border border-outline-variant dashboard-panel p-lg flex flex-col justify-between">
+      <div class="flex items-start justify-between gap-md">
+        <span class="font-label-md text-label-md text-on-surface-variant uppercase">Total Variance</span>
+        <span class="material-symbols-outlined text-error">warning</span>
       </div>
-      <div class="font-display-sm text-display-sm text-on-surface font-data-mono">
-        {{ stats.failed_files if stats else '—' }}
-      </div>
-      <a href="/uploaded-files?status=FAILED"
-         class="font-body-sm text-body-sm text-error flex items-center gap-xs hover:underline">
-        Review <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
-      </a>
+      <p class="font-headline-md text-headline-md font-data-mono {% if r.variance|abs > 0.99 %}text-error{% else %}text-[#166534]{% endif %}">
+        ₹ {{ r.variance_display }}
+      </p>
     </div>
-  </div>
+  </section>
 
-  <!-- Middle Row: Files by Status + Quick Actions -->
-  <div class="grid grid-cols-1 md:grid-cols-4 gap-md">
+  <section class="flex flex-wrap gap-sm">
+    {% set chips = [
+      ('Matched', 'Matched', 'bg-[#F0FDF4] text-[#166534] border-[#BBF7D0]'),
+      ('Variance', 'Variances', 'bg-[#FEF2F2] text-[#991B1B] border-[#FECACA]'),
+      ('Markup/Booking Charges', 'Markup', 'bg-[#FFFBEB] text-[#92400E] border-[#FDE68A]'),
+      ('Not in Cost', 'Not in Cost', 'bg-[#FFF7ED] text-[#9A3412] border-[#FED7AA]'),
+      ('Not in CASH X', 'Not in CASH X', 'bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE]'),
+      ('Not in SPYJ', 'Not in SPYJ', 'bg-[#F5F3FF] text-[#5B21B6] border-[#DDD6FE]'),
+    ] %}
+    {% for key, label, cls in chips %}
+      {% if r.remark_map.get(key, 0) %}
+      <span class="inline-flex items-center gap-xs px-sm py-[4px] rounded-full border font-label-md text-label-md {{ cls }}">
+        {{ label }} <span class="font-data-mono">{{ "{:,}".format(r.remark_map.get(key, 0)) }}</span>
+      </span>
+      {% endif %}
+    {% endfor %}
+  </section>
 
-    <!-- Files by Status (3 cols) -->
-    <div class="md:col-span-3 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col">
-      <div class="flex justify-between items-center mb-md border-b border-outline-variant pb-sm">
-        <h2 class="font-headline-sm text-headline-sm text-on-surface">Files by Status</h2>
-        <a href="/uploaded-files"
-           class="font-label-md text-label-md text-primary flex items-center gap-xs hover:underline">
-          View Details <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
-        </a>
+  <section class="bg-surface-container-lowest border border-outline-variant dashboard-panel p-lg">
+    <div class="flex items-center justify-between border-b border-outline-variant pb-sm mb-md">
+      <h2 class="font-headline-sm text-headline-sm text-on-surface">Booking Coverage</h2>
+      <span class="font-body-sm text-body-sm text-on-surface-variant">Counts are unique reconciled PNR rows by source presence</span>
+    </div>
+    {% set booking_cards = [
+      ('Airline Portal / AIR COST TRN', r.booking_counts.air_cost, r.booking_counts.air_cost_pct, 'flight', '#004AC6'),
+      ('Cash X Portal', r.booking_counts.cashx, r.booking_counts.cashx_pct, 'payments', '#166534'),
+      ('Other Portal / SPYJ', r.booking_counts.other_portal, r.booking_counts.spyj_pct, 'language', '#7C3AED'),
+      ('Matched Entries', r.booking_counts.matched, r.booking_counts.matched_pct, 'check_circle', '#2F7D5B'),
+      ('Variance Records', r.booking_counts.variance, r.booking_counts.variance_pct, 'warning', '#BA1A1A'),
+    ] %}
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-md">
+      {% for label, count, pct, icon, color in booking_cards %}
+      <div class="border border-outline-variant rounded bg-surface p-md flex flex-col gap-sm">
+        <div class="flex items-start justify-between gap-sm">
+          <span class="font-label-md text-label-md text-on-surface-variant uppercase">{{ label }}</span>
+          <span class="material-symbols-outlined text-[18px]" style="color: {{ color }}">{{ icon }}</span>
+        </div>
+        <strong class="font-headline-sm text-headline-sm text-on-surface font-data-mono">{{ "{:,}".format(count) }}</strong>
+        <div class="h-[6px] bg-surface-container-high rounded-full overflow-hidden">
+          <div class="h-full rounded-full" style="width: {{ pct|round(1) }}%; background: {{ color }}"></div>
+        </div>
+        <span class="font-data-mono text-data-mono text-on-surface-variant">{{ "%.2f"|format(pct) }}% of total</span>
       </div>
+      {% endfor %}
+    </div>
+  </section>
 
-      <div class="flex-1 flex flex-col justify-center gap-lg">
-        {% set file_statuses = [
-          ('UPLOADED',   'cloud_done',   'text-on-surface-variant', '#737686',  stats.uploaded_files   if stats else 0),
-          ('PROCESSING', 'sync',         'text-[#92400E]',          '#92400E',  stats.processing_files if stats else 0),
-          ('PROCESSED',  'check_circle', 'text-[#166534]',          '#166534',  stats.processed_files  if stats else 0),
-          ('FAILED',     'error',        'text-[#991B1B]',          '#991B1B',  stats.failed_files     if stats else 0),
-        ] %}
-        {% set total_files = (stats.total_files if stats else 1) or 1 %}
-        {% for label, icon, color_cls, bar_color, count in file_statuses %}
-        <div class="flex items-center gap-md">
-          <div class="w-[130px] font-label-md text-label-md {{ color_cls }} flex items-center gap-xs">
-            <span class="material-symbols-outlined text-[16px]">{{ icon }}</span>
-            {{ label | title }}
+  <section class="grid grid-cols-1 xl:grid-cols-3 gap-md">
+    <div class="xl:col-span-2 bg-surface-container-lowest border border-outline-variant dashboard-panel p-lg">
+      <div class="flex items-center justify-between border-b border-outline-variant pb-sm mb-md">
+        <h2 class="font-headline-sm text-headline-sm text-on-surface">Remark Breakdown</h2>
+        <span class="font-data-mono text-data-mono text-on-surface-variant">{{ "{:,}".format(r.total_pnrs) }} rows</span>
+      </div>
+      <div class="flex flex-col gap-sm">
+        {% for item in r.remarks %}
+        <div class="grid grid-cols-[150px_1fr_72px] items-center gap-md">
+          <span class="font-body-sm text-body-sm text-on-surface-variant truncate">{{ item.remark }}</span>
+          <div class="h-[16px] bg-surface-container rounded overflow-hidden">
+            <div class="h-full rounded"
+                 style="width: {{ (item.count / r.max_remark_count * 100)|round(1) }}%; background:
+                   {% if item.remark == 'Matched' %}#DCFCE7
+                   {% elif item.remark == 'Variance' %}#FECACA
+                   {% elif item.remark == 'Markup/Booking Charges' %}#FEF3C7
+                   {% elif item.remark == 'Not in Cost' %}#FED7AA
+                   {% elif item.remark == 'Not in CASH X' %}#DBEAFE
+                   {% else %}#DDD6FE{% endif %};"></div>
           </div>
-          <div class="flex-1 h-[8px] bg-surface-container-high rounded-full overflow-hidden">
-            <div class="h-full rounded-full"
-                 style="background:{{ bar_color }}; width:{{ [(count / total_files * 100)|round|int, 2]|max }}%"></div>
-          </div>
-          <div class="w-[48px] text-right font-data-mono text-body-sm text-on-surface">
-            {{ count }}
-          </div>
+          <span class="font-data-mono text-data-mono text-on-surface text-right">{{ "{:,}".format(item.count) }}</span>
+        </div>
+        {% else %}
+        <div class="py-xl text-center text-on-surface-variant font-body-sm text-body-sm">
+          No reconciliation results yet.
         </div>
         {% endfor %}
       </div>
     </div>
 
-    <!-- Quick Actions (1 col) -->
-    <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col">
-      <h2 class="font-headline-sm text-headline-sm text-on-surface mb-md pb-sm border-b border-outline-variant">
-        Quick Actions
-      </h2>
-      <div class="flex flex-col gap-sm">
-        <a href="/upload"
-           class="w-full flex items-center justify-center gap-sm bg-primary text-on-primary
-                  font-label-md text-label-md h-[40px] rounded-lg
-                  hover:bg-on-primary-fixed-variant transition-colors">
-          <span class="material-symbols-outlined text-[18px]">upload</span>
-          Upload a File
-        </a>
-        <a href="/organizations"
-           class="w-full flex items-center justify-start gap-sm bg-surface-container-lowest
-                  border border-outline-variant text-on-surface font-label-md text-label-md
-                  h-[40px] px-md rounded-lg hover:bg-surface-container-low transition-colors mt-sm">
-          <span class="material-symbols-outlined text-[18px] text-on-surface-variant">domain</span>
-          View Organizations
-        </a>
-        <a href="/uploaded-files"
-           class="w-full flex items-center justify-start gap-sm bg-surface-container-lowest
-                  border border-outline-variant text-on-surface font-label-md text-label-md
-                  h-[40px] px-md rounded-lg hover:bg-surface-container-low transition-colors">
-          <span class="material-symbols-outlined text-[18px] text-on-surface-variant">folder_open</span>
-          View Uploaded Files
-        </a>
+    <div class="bg-surface-container-lowest border border-outline-variant dashboard-panel p-lg">
+      <h2 class="font-headline-sm text-headline-sm text-on-surface border-b border-outline-variant pb-sm mb-lg">PNR Distribution</h2>
+      <div class="flex flex-col items-center justify-center gap-md">
+        <div class="w-[220px] h-[220px] rounded-full relative"
+             style="background: conic-gradient(#2F7D5B 0 {{ r.distribution.matched_pct }}%, #C7372F {{ r.distribution.matched_pct }}% {{ r.distribution.matched_pct + r.distribution.variance_pct }}%, #D8B316 {{ r.distribution.matched_pct + r.distribution.variance_pct }}% 100%);">
+          <div class="absolute inset-[42px] bg-surface-container-lowest rounded-full flex flex-col items-center justify-center text-center">
+            <span class="font-label-md text-label-md text-on-surface-variant">Total</span>
+            <strong class="font-headline-sm text-headline-sm text-primary font-data-mono">{{ "{:,}".format(r.total_pnrs) }}</strong>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-xs w-full font-body-sm text-body-sm">
+          <span class="flex items-center justify-between"><span><i class="inline-block w-3 h-3 bg-[#2F7D5B] mr-xs"></i>Matched</span><b class="font-data-mono">{{ "{:,}".format(r.distribution.matched) }}</b></span>
+          <span class="flex items-center justify-between"><span><i class="inline-block w-3 h-3 bg-[#C7372F] mr-xs"></i>Variance</span><b class="font-data-mono">{{ "{:,}".format(r.distribution.variance) }}</b></span>
+          <span class="flex items-center justify-between"><span><i class="inline-block w-3 h-3 bg-[#D8B316] mr-xs"></i>Missing source</span><b class="font-data-mono">{{ "{:,}".format(r.distribution.missing) }}</b></span>
+        </div>
       </div>
     </div>
-  </div>
+  </section>
 
-  <!-- Recent Uploads Table -->
-  <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm">
-    <div class="flex justify-between items-center px-md py-sm border-b border-outline-variant bg-surface">
-      <h2 class="font-headline-sm text-headline-sm text-on-surface">Recent Uploads</h2>
-      <a href="/uploaded-files" class="font-label-md text-label-md text-primary hover:underline flex items-center gap-xs">
-        See all <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
-      </a>
-    </div>
-    <div class="overflow-x-auto">
+  <section class="grid grid-cols-1 xl:grid-cols-3 gap-md">
+    <div class="xl:col-span-2 bg-surface-container-lowest border border-outline-variant dashboard-panel overflow-hidden">
       <table class="w-full text-left border-collapse">
-        <thead class="bg-surface border-b border-outline-variant">
+        <thead class="bg-primary text-on-primary">
           <tr>
-            <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Filename</th>
-            <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Organization</th>
-            <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">Uploaded</th>
-            <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Status</th>
-            <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">Action</th>
+            <th class="px-md py-sm font-label-md text-label-md uppercase">Source</th>
+            <th class="px-md py-sm font-label-md text-label-md uppercase text-right">Sale Amount (₹)</th>
+            <th class="px-md py-sm font-label-md text-label-md uppercase text-right">Refund Amount (₹)</th>
+            <th class="px-md py-sm font-label-md text-label-md uppercase text-right">Net Amount (₹)</th>
+            <th class="px-md py-sm font-label-md text-label-md uppercase text-right">% of Total Cost</th>
           </tr>
         </thead>
         <tbody class="font-body-sm text-body-sm">
-          {% for f in recent_files %}
-          <tr class="border-b border-outline-variant/50 hover:bg-surface-container transition-colors h-[48px]">
-            <td class="px-md py-sm text-on-surface font-medium flex items-center gap-sm">
-              <span class="material-symbols-outlined text-outline text-[18px]">description</span>
-              {{ f.original_filename }}
-            </td>
-            <td class="px-md py-sm text-on-surface-variant">{{ f.organization.name if f.organization else '—' }}</td>
-            <td class="px-md py-sm text-right font-data-mono text-data-mono text-on-surface-variant">
-              {{ f.uploaded_at.strftime('%Y-%m-%d %H:%M') if f.uploaded_at else '—' }}
-            </td>
-            <td class="px-md py-sm">
-              {% if f.upload_status.value == 'PROCESSED' %}
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#F0FDF4] text-[#166534]">Processed</span>
-              {% elif f.upload_status.value == 'PROCESSING' %}
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-[#FFFBEB] text-[#92400E]">
-                  <span class="material-symbols-outlined text-[12px] animate-spin">sync</span>Processing
-                </span>
-              {% elif f.upload_status.value == 'FAILED' %}
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#FEF2F2] text-[#991B1B]">Failed</span>
-              {% else %}
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-surface-container-high text-on-surface-variant">Uploaded</span>
-              {% endif %}
-            </td>
-            <td class="px-md py-sm text-right">
-              {% if f.upload_status.value == 'PROCESSED' %}
-                <a href="/organizations/{{ f.organization_id }}"
-                   class="text-secondary font-label-md text-label-md hover:underline">View</a>
-              {% else %}
-                <span class="text-outline font-label-md text-label-md opacity-50">—</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% else %}
-          <tr>
-            <td colspan="5" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
-              No uploaded files yet.
-              <a href="/upload" class="text-primary hover:underline ml-xs">Upload one now →</a>
-            </td>
+          {% for source in r.sources %}
+          <tr class="border-b border-outline-variant/50">
+            <td class="px-md py-sm text-on-surface font-semibold">{{ source.name }}</td>
+            <td class="px-md py-sm text-right font-data-mono">{{ source.sale_display }}</td>
+            <td class="px-md py-sm text-right font-data-mono">{{ source.refund_display }}</td>
+            <td class="px-md py-sm text-right font-data-mono">{{ source.net_display }}</td>
+            <td class="px-md py-sm text-right font-data-mono">{{ source.percent_display }}</td>
           </tr>
           {% endfor %}
+          <tr class="bg-[#FEE2E2] text-[#991B1B] font-semibold">
+            <td class="px-md py-sm">Total Variance</td>
+            <td class="px-md py-sm text-right">-</td>
+            <td class="px-md py-sm text-right">-</td>
+            <td class="px-md py-sm text-right font-data-mono">{{ r.variance_display }}</td>
+            <td class="px-md py-sm text-right font-data-mono">
+              {{ "%.2f"|format((r.variance|abs / r.cost_net|abs * 100) if r.cost_net else 0) }}%
+            </td>
+          </tr>
         </tbody>
       </table>
     </div>
-  </div>
+
+    <div class="bg-surface-container-lowest border border-outline-variant dashboard-panel p-lg">
+      <div class="flex items-center justify-between border-b border-outline-variant pb-sm mb-sm">
+        <h2 class="font-headline-sm text-headline-sm text-on-surface">Recent Files</h2>
+        <a href="/uploaded-files" class="font-label-md text-label-md text-primary hover:underline">All files</a>
+      </div>
+      <div class="flex flex-col gap-xs">
+        {% for f in recent_files[:6] %}
+        <a href="/sheets-data/{{ f.id }}" class="flex items-center justify-between gap-sm px-sm py-xs border border-outline-variant rounded hover:bg-surface-container transition-colors">
+          <span class="flex items-center gap-xs min-w-0">
+            <span class="material-symbols-outlined text-[16px] text-outline">description</span>
+            <span class="truncate font-body-sm text-body-sm text-on-surface">{{ f.original_filename }}</span>
+          </span>
+          {% set status = f.upload_status.value if f.upload_status.value is defined else f.upload_status %}
+          <span class="shrink-0 text-[10px] font-semibold px-2 py-[2px] rounded
+                       {% if status == 'PROCESSED' %}bg-[#F0FDF4] text-[#166534]
+                       {% elif status == 'FAILED' %}bg-[#FEF2F2] text-[#991B1B]
+                       {% elif status == 'PROCESSING' %}bg-[#FFFBEB] text-[#92400E]
+                       {% else %}bg-surface-container-high text-on-surface-variant{% endif %}">
+            {{ status|title }}
+          </span>
+        </a>
+        {% else %}
+        <p class="py-lg text-center font-body-sm text-body-sm text-on-surface-variant">No files uploaded yet.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
 
 </main>
 {% endblock %}
