@@ -137,11 +137,7 @@
                    class="text-primary font-label-md text-label-md hover:underline flex items-center gap-xs">
                   <span class="material-symbols-outlined text-[14px]">table_chart</span>View Data
                 </a>
-                {% if item.is_batch and item.status == 'PROCESSED' %}
-                  <span class="text-outline-variant">·</span>
-                  <button onclick="runCombinedReconcile({{ item.file_ids | tojson }}, this)"
-                          class="text-secondary font-label-md text-label-md hover:underline">Combined Result</button>
-                {% elif item.status == 'PROCESSED' %}
+                {% if item.status == 'PROCESSED' and not item.is_batch %}
                   <span class="text-outline-variant">·</span>
                   <a href="/processing-result/{{ item.id }}"
                      class="text-secondary font-label-md text-label-md hover:underline">Result</a>
@@ -150,6 +146,11 @@
                   <button onclick="retryProcess({{ item.id }}, this)"
                           class="text-error font-label-md text-label-md hover:underline">Retry</button>
                 {% endif %}
+                <span class="text-outline-variant">·</span>
+                <button onclick="deleteUploadItem({{ item.file_ids[0] }}, {{ 'true' if item.is_batch else 'false' }}, this)"
+                        class="text-error font-label-md text-label-md hover:underline flex items-center gap-xs">
+                  <span class="material-symbols-outlined text-[14px]">delete</span>Delete
+                </button>
               </div>
             </td>
           </tr>
@@ -204,24 +205,29 @@
     }
   }
 
-  async function runCombinedReconcile(fileIds, btn) {
+  async function deleteUploadItem(fileId, deleteBatch, btn) {
+    const message = deleteBatch
+      ? 'Delete this upload batch and all related sheet, staging, and reconciliation data?'
+      : 'Delete this uploaded file and all related sheet, staging, and reconciliation data?';
+    if (!confirm(message)) return;
+
     btn.disabled = true;
-    btn.textContent = 'Reconciling…';
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="material-symbols-outlined text-[14px] animate-spin">sync</span>Deleting…';
+
     try {
-      const resp = await fetch('/files/reconcile-combined', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uploaded_file_ids: fileIds }),
+      const resp = await fetch(`/files/${fileId}?delete_batch=${deleteBatch ? 'true' : 'false'}`, {
+        method: 'DELETE',
       });
-      const data = await resp.json();
       if (!resp.ok) {
-        throw new Error(data.detail || 'Combined reconciliation failed.');
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.detail || 'Delete failed.');
       }
-      window.location.href = `/files/${data.result_uploaded_file_id}/reconcile/download`;
+      window.location.reload();
     } catch (err) {
-      alert(err.message || 'Combined reconciliation failed.');
+      alert(err.message || 'Delete failed.');
       btn.disabled = false;
-      btn.textContent = 'Combined Result';
+      btn.innerHTML = originalHtml;
     }
   }
 </script>

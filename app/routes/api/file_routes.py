@@ -32,8 +32,13 @@ from sqlalchemy.orm import Session
 
 from app.database.database import SessionLocal
 from app.database.session import get_db
+from app.models.reconciliation_remark import ReconciliationRemark
+from app.models.reconciliation_result import ReconciliationResult
+from app.models.staging_record import StagingRecord
 from app.models.upload_batch import UploadBatch
 from app.models.uploaded_file import UploadStatus
+from app.models.uploaded_file import UploadedFile
+from app.models.uploaded_sheet import UploadedSheet
 from app.service import progress_store
 from app.service.organization_service import get_or_create_organization
 from app.service.staging_record_service import StagingRecordService
@@ -68,6 +73,74 @@ def _save_file(upload: UploadFile) -> Path:
         upload.file.close()
     logger.info("Saved uploaded file to '%s'.", file_path)
     return file_path
+
+
+def _delete_uploaded_files(db: Session, uploaded_files: list[UploadedFile]) -> dict:
+    """Delete uploaded files plus dependent sheet, staging, and result data."""
+    if not uploaded_files:
+        return {"deleted_files": 0, "deleted_sheets": 0, "deleted_staging_records": 0, "deleted_results": 0}
+
+    file_ids = [item.id for item in uploaded_files]
+    sheet_ids = [
+        row[0]
+        for row in (
+            db.query(UploadedSheet.id)
+            .filter(UploadedSheet.uploaded_file_id.in_(file_ids))
+            .all()
+        )
+    ]
+    result_ids = [
+        row[0]
+        for row in (
+            db.query(ReconciliationResult.id)
+            .filter(ReconciliationResult.uploaded_file_id.in_(file_ids))
+            .all()
+        )
+    ]
+
+    deleted_remarks = 0
+    if result_ids:
+        deleted_remarks = (
+            db.query(ReconciliationRemark)
+            .filter(ReconciliationRemark.result_id.in_(result_ids))
+            .delete(synchronize_session=False)
+        )
+
+    deleted_results = (
+        db.query(ReconciliationResult)
+        .filter(ReconciliationResult.uploaded_file_id.in_(file_ids))
+        .delete(synchronize_session=False)
+    )
+
+    deleted_staging = 0
+    if sheet_ids:
+        deleted_staging = (
+            db.query(StagingRecord)
+            .filter(StagingRecord.uploaded_sheet_id.in_(sheet_ids))
+            .delete(synchronize_session=False)
+        )
+
+    deleted_sheets = (
+        db.query(UploadedSheet)
+        .filter(UploadedSheet.uploaded_file_id.in_(file_ids))
+        .delete(synchronize_session=False)
+    )
+
+    stored_paths = [Path(item.file_path) for item in uploaded_files if item.file_path]
+    deleted_files = (
+        db.query(UploadedFile)
+        .filter(UploadedFile.id.in_(file_ids))
+        .delete(synchronize_session=False)
+    )
+
+    return {
+        "deleted_files": deleted_files,
+        "deleted_sheets": deleted_sheets,
+        "deleted_staging_records": deleted_staging,
+        "deleted_results": deleted_results,
+        "deleted_remarks": deleted_remarks,
+        "_stored_paths": stored_paths,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -318,6 +391,68 @@ async def upload_multiple_files_async(files: list[UploadFile] = File(...)):
     logger.info("Started background multi-file ingestion thread for job '%s'.", job_id)
 
     return {"job_id": job_id}
+
+
+@router.delete("/{uploaded_file_id}", status_code=200)
+def delete_uploaded_file(
+    uploaded_file_id: int,
+    delete_batch: bool = False,
+    db: Session = Depends(get_db),
+):
+    """
+    Delete an uploaded file record and all dependent imported/reconciled data.
+
+    When delete_batch=true and the file belongs to a batch, every file in that
+    batch is removed and the UploadBatch row is deleted too.
+    """
+    uploaded_file = (
+        db.query(UploadedFile)
+        .filter(UploadedFile.id == uploaded_file_id)
+        .first()
+    )
+    if not uploaded_file:
+        raise HTTPException(status_code=404, detail="Uploaded file not found.")
+
+    batch_id = uploaded_file.batch_id if delete_batch else None
+    if batch_id:
+        files_to_delete = (
+            db.query(UploadedFile)
+            .filter(UploadedFile.batch_id == batch_id)
+            .all()
+        )
+    else:
+        files_to_delete = [uploaded_file]
+
+    try:
+        summary = _delete_uploaded_files(db, files_to_delete)
+        deleted_batch = False
+        if batch_id:
+            deleted_batch = (
+                db.query(UploadBatch)
+                .filter(UploadBatch.id == batch_id)
+                .delete(synchronize_session=False)
+            ) > 0
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Failed to delete uploaded_file_id=%s.", uploaded_file_id)
+        raise HTTPException(status_code=500, detail=f"Delete failed: {exc}")
+
+    stored_paths = summary.pop("_stored_paths", [])
+    for stored_path in stored_paths:
+        try:
+            if stored_path.exists() and stored_path.is_file():
+                stored_path.unlink()
+        except OSError:
+            logger.warning("Could not remove stored upload file '%s'.", stored_path, exc_info=True)
+
+    return {
+        "status": "deleted",
+        "uploaded_file_id": uploaded_file_id,
+        "batch_id": batch_id,
+        "deleted_batch": deleted_batch,
+        **summary,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
