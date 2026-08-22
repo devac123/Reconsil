@@ -500,6 +500,7 @@
 {% block scripts %}
 <script>
   const FILE_ID = {{ uploaded_file.id }};
+  const UPLOADED_FILE_IDS = {{ uploaded_file_ids | tojson }};
 
   // Per-sheet state: { sheet_id: { page, pageSize, totalRows, totalPages } }
   const state = {};
@@ -811,10 +812,20 @@
   async function runReconciliation() {
     const btn = document.getElementById('recon-run-btn');
     btn.disabled = true;
-    btn.innerHTML = '<span class="material-symbols-outlined text-[14px] animate-spin">sync</span> Running…';
+    btn.innerHTML = '<span class="material-symbols-outlined text-[14px] animate-spin">sync</span> Running...';
 
     try {
-      const resp = await fetch(`/files/${FILE_ID}/reconcile`, { method: 'POST' });
+      const isBatchRun = UPLOADED_FILE_IDS.length > 1;
+      const resp = isBatchRun
+        ? await fetch('/files/reconcile-combined', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              uploaded_file_ids: UPLOADED_FILE_IDS,
+              result_uploaded_file_id: FILE_ID,
+            }),
+          })
+        : await fetch(`/files/${FILE_ID}/reconcile`, { method: 'POST' });
       if (!resp.ok) {
         const err = await resp.json();
         throw new Error(err.detail || 'Reconciliation failed');

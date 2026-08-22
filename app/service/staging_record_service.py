@@ -25,7 +25,7 @@ Design notes
 
 import logging
 import math
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Generator
@@ -132,13 +132,13 @@ def _make_json_safe(value: Any) -> Any:
             return value.isoformat()
     except ImportError:
         pass
-    if isinstance(value, (datetime, date)):
+    if isinstance(value, (datetime, date, time)):
         return value.isoformat()
     if isinstance(value, Decimal):
         return float(value)
     type_name = type(value).__module__
     if type_name == "numpy":
-        return getattr(value, "item", lambda: value)()
+        return _make_json_safe(getattr(value, "item", lambda: value)())
     return value
 
 
