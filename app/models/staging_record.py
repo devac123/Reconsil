@@ -35,6 +35,13 @@ class StagingRecord(Base):
         index=True,
     )
 
+    uploaded_file_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("uploaded_files.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
     row_number: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -96,11 +103,18 @@ class StagingRecord(Base):
         lazy="select",
     )
 
+    uploaded_file = relationship(
+        "UploadedFile",
+        backref="staging_records",
+        lazy="select",
+    )
+
 
     def __repr__(self) -> str:
         return (
             f"<StagingRecord("
             f"id={self.id}, "
+            f"file_id={self.uploaded_file_id}, "
             f"sheet_id={self.uploaded_sheet_id}, "
             f"pnr={self.pnr}, "
             f"row={self.row_number})>"

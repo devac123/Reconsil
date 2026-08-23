@@ -431,6 +431,7 @@ class StagingRecordService:
             try:
                 inserted = self._repo.bulk_create(
                     uploaded_sheet_id=sheet.id,
+                    uploaded_file_id=sheet.uploaded_file_id,
                     rows=rows,
                 )
                 self._db.commit()

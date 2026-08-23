@@ -27,7 +27,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.database.session import get_db
 from app.models.staging_record import StagingRecord
@@ -111,6 +111,8 @@ def _sheet_payload(
     page_size: int,
 ) -> dict:
     """Build the per-sheet dict returned in responses."""
+    raw_columns = list(records[0].raw_data.keys()) if records else []
+    columns = ["File Name", *raw_columns]
     return {
         "sheet_id":    sheet.id,
         "sheet_name":  sheet.sheet_name,
@@ -119,15 +121,27 @@ def _sheet_payload(
         "page":        page,
         "page_size":   page_size,
         "total_pages": max(1, -(-total // page_size)),
-        "columns":     list(records[0].raw_data.keys()) if records else [],
+        "columns":     columns,
         "rows": [
             {
+                "uploaded_file_id":  r.uploaded_file_id,
+                "uploaded_file_name": (
+                    r.uploaded_file.original_filename
+                    if r.uploaded_file else None
+                ),
+                "uploaded_sheet_id": r.uploaded_sheet_id,
                 "row_number":       r.row_number,
                 "pnr":              r.pnr,
                 "ticket_number":    r.ticket_number,
                 "transaction_date": str(r.transaction_date) if r.transaction_date else None,
                 "is_processed":     r.is_processed,
-                "data":             r.raw_data,
+                "data":             {
+                    "File Name": (
+                        r.uploaded_file.original_filename
+                        if r.uploaded_file else f"File #{r.uploaded_file_id}"
+                    ),
+                    **r.raw_data,
+                },
             }
             for r in records
         ],
@@ -252,6 +266,7 @@ def get_all_sheets_data(
         total   = base_q.count()
         records = (
             base_q
+            .options(joinedload(StagingRecord.uploaded_file))
             .order_by(StagingRecord.uploaded_sheet_id, StagingRecord.row_number)
             .offset(skip)
             .limit(page_size)
@@ -322,6 +337,7 @@ def get_single_sheet_data(
     skip    = (page - 1) * page_size
     records = (
         base_q
+        .options(joinedload(StagingRecord.uploaded_file))
         .order_by(StagingRecord.uploaded_sheet_id, StagingRecord.row_number)
         .offset(skip)
         .limit(page_size)

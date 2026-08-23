@@ -35,6 +35,34 @@ def ensure_schema() -> None:
             conn.execute(text("ALTER TABLE uploaded_files ADD COLUMN batch_id INT NULL"))
             conn.execute(text("CREATE INDEX ix_uploaded_files_batch_id ON uploaded_files (batch_id)"))
 
+    # ── staging_records: uploaded_file_id ────────────────────────────────
+    staging_columns = {
+        column["name"]
+        for column in inspector.get_columns("staging_records")
+    }
+
+    if "uploaded_file_id" not in staging_columns:
+        logger.info("Adding staging_records.uploaded_file_id column.")
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE staging_records ADD COLUMN uploaded_file_id INT NULL AFTER uploaded_sheet_id"))
+            conn.execute(text("CREATE INDEX ix_staging_records_uploaded_file_id ON staging_records (uploaded_file_id)"))
+            conn.execute(text("""
+                UPDATE staging_records sr
+                JOIN uploaded_sheets us ON us.id = sr.uploaded_sheet_id
+                SET sr.uploaded_file_id = us.uploaded_file_id
+                WHERE sr.uploaded_file_id IS NULL
+            """))
+
+    else:
+        logger.info("Backfilling staging_records.uploaded_file_id where missing.")
+        with engine.begin() as conn:
+            conn.execute(text("""
+                UPDATE staging_records sr
+                JOIN uploaded_sheets us ON us.id = sr.uploaded_sheet_id
+                SET sr.uploaded_file_id = us.uploaded_file_id
+                WHERE sr.uploaded_file_id IS NULL
+            """))
+
     # ── reconciliation_results: booking_date ──────────────────────────────
     def _recon_columns() -> set[str]:
         inspector.info_cache.clear()

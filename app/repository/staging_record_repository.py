@@ -36,6 +36,7 @@ class StagingRecordRepository:
         uploaded_sheet_id: int,
         row_number: int,
         raw_data: dict,
+        uploaded_file_id: int | None = None,
     ) -> StagingRecord:
         """
         Persist a single staging record and return the ORM object.
@@ -45,6 +46,7 @@ class StagingRecordRepository:
         now = datetime.utcnow()
         record = StagingRecord(
             uploaded_sheet_id=uploaded_sheet_id,
+            uploaded_file_id=uploaded_file_id,
             row_number=row_number,
             raw_data=raw_data,
             is_processed=False,
@@ -58,6 +60,7 @@ class StagingRecordRepository:
     def bulk_create(
         self,
         uploaded_sheet_id: int,
+        uploaded_file_id: int | None,
         rows: list[dict],
     ) -> int:
         """
@@ -68,6 +71,8 @@ class StagingRecordRepository:
         ----------
         uploaded_sheet_id:
             FK value applied to every row in this batch.
+        uploaded_file_id:
+            Parent uploaded-file FK value applied to every row in this batch.
         rows:
             List of dicts ``{"row_number": int, "raw_data": dict}``.
             The service layer is responsible for building this list.
@@ -88,6 +93,7 @@ class StagingRecordRepository:
         mappings = [
             {
                 "uploaded_sheet_id": uploaded_sheet_id,
+                "uploaded_file_id":  uploaded_file_id,
                 "row_number":        row["row_number"],
                 "pnr":               row.get("pnr"),
                 "ticket_number":     row.get("ticket_number"),
