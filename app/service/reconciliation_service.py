@@ -44,6 +44,7 @@ For a given uploaded file the engine:
 import logging
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+import re
 
 from sqlalchemy import insert, text
 from sqlalchemy.orm import Session
@@ -117,6 +118,81 @@ def _safe_date(value) -> date | None:
         except (ValueError, OverflowError):
             return None
     return None
+
+
+def _clean_text(value) -> str | None:
+    """Return a stripped display string, ignoring null-like spreadsheet text."""
+    if value is None:
+        return None
+    text_value = str(value).strip()
+    if not text_value or text_value.lower() in ("nan", "none", "nat"):
+        return None
+    return text_value
+
+
+def _first_text(raw: dict, *keys: str) -> str | None:
+    """Return the first non-empty text value for any matching raw-data key."""
+    for key in keys:
+        value = _clean_text(raw.get(key))
+        if value:
+            return value
+    return None
+
+
+def _extract_client_name(raw: dict) -> str | None:
+    """Resolve client/passenger name from common CASH X and SPYJ headers."""
+    return _first_text(
+        raw,
+        "Client Name",
+        "CLIENT NAME",
+        "client_name",
+        "Customer Name",
+        "CUSTOMER NAME",
+        "Passenger Name",
+        "PASSENGER NAME",
+        "Pax Name",
+        "PAX NAME",
+        "PAX",
+        "Name",
+        "NAME",
+        "Name1",
+        "name1",
+    )
+
+
+def _extract_client_code(raw: dict) -> str | None:
+    """Resolve client code from common CASH X and SPYJ headers."""
+    return _first_text(
+        raw,
+        "Client Code",
+        "CLIENT CODE",
+        "client_code",
+        "Customer Code",
+        "CUSTOMER CODE",
+    )
+
+
+def _normalize_ticket_number(value) -> str | None:
+    """Return only ticket-number digits so cross-sheet joins survive suffixes."""
+    text_value = _clean_text(value)
+    if not text_value:
+        return None
+    text_value = re.sub(r"C\d+$", "", text_value, flags=re.IGNORECASE)
+    digits = re.sub(r"\D", "", text_value)
+    return digits or None
+
+
+def _ticket_lookup_keys(value) -> list[str]:
+    """Return plausible ticket keys, including 10-digit core ticket numbers."""
+    ticket = _normalize_ticket_number(value)
+    if not ticket:
+        return []
+    keys = [ticket]
+    if len(ticket) >= 13:
+        keys.append(ticket[3:13])
+    if len(ticket) > 10:
+        keys.append(ticket[-10:])
+    return list(dict.fromkeys(k for k in keys if k))
 
 
 def _assign_remarks(
@@ -232,8 +308,9 @@ class ReconciliationService:
         cost_agg   = self._aggregate_cost(sheet_map)
         cashx_sale = self._aggregate_gross_fare(sheet_map, _SHEET_CASHX_SALE)
         cashx_re   = self._aggregate_gross_fare(sheet_map, _SHEET_CASHX_RE)
-        spyj_sale  = self._aggregate_spyj_sale(sheet_map)
-        spyj_ref   = self._aggregate_spyj_refund(sheet_map)
+        cashx_client_by_ticket = self._build_cashx_client_by_ticket(sheet_map)
+        spyj_sale  = self._aggregate_spyj_sale(sheet_map, cashx_client_by_ticket)
+        spyj_ref   = self._aggregate_spyj_refund(sheet_map, cashx_client_by_ticket)
 
         # CASH X net = sale - refund  (keyed by PNR)
         cashx_agg = self._merge_sale_refund(cashx_sale, cashx_re)
@@ -266,10 +343,27 @@ class ReconciliationService:
             cashx_amount = x["sale"]   if x else 0.0
             cashx_refund = x["refund"] if x else 0.0
             cashx_net    = x["net"]    if x else 0.0
+            cashx_client_name = (
+                x["client_name"] if x and x.get("client_name") else
+                c["customer_name"] if c and c.get("customer_name") else
+                None
+            )
+            cashx_client_code = x["client_code"] if x and x.get("client_code") else None
 
             spyj_amount = s["sale"]   if s else 0.0
             spyj_refund = s["refund"] if s else 0.0
             spyj_net    = s["net"]    if s else 0.0
+            spyj_client_name = (
+                s["client_name"] if s and s.get("client_name") else
+                cashx_client_name if cashx_client_name else
+                c["customer_name"] if c and c.get("customer_name") else
+                None
+            )
+            spyj_client_code = (
+                s["client_code"] if s and s.get("client_code") else
+                cashx_client_code if cashx_client_code else
+                None
+            )
 
             variance = cost_net - cashx_net - spyj_net
 
@@ -293,15 +387,19 @@ class ReconciliationService:
                 "cost_refund": cost_refund,
                 "cost_net":    cost_net,
 
-                "cashx_pnr":    pnr if x else "not found",
-                "cashx_amount": cashx_amount,
-                "cashx_refund": cashx_refund,
-                "cashx_net":    cashx_net,
+                "cashx_pnr":         pnr if x else "not found",
+                "cashx_client_name": cashx_client_name if x else None,
+                "cashx_client_code": cashx_client_code if x else None,
+                "cashx_amount":      cashx_amount,
+                "cashx_refund":      cashx_refund,
+                "cashx_net":         cashx_net,
 
-                "spyj_pnr":    pnr if s else "not found",
-                "spyj_amount": spyj_amount,
-                "spyj_refund": spyj_refund,
-                "spyj_net":    spyj_net,
+                "spyj_pnr":         pnr if s else "not found",
+                "spyj_client_name": spyj_client_name if s and spyj_client_name else "not found" if s else None,
+                "spyj_client_code": spyj_client_code if s and spyj_client_code else "not found" if s else None,
+                "spyj_amount":      spyj_amount,
+                "spyj_refund":      spyj_refund,
+                "spyj_net":         spyj_net,
 
                 "variance":       round(variance, 2),
                 "remark":         remark_str,
@@ -415,8 +513,9 @@ class ReconciliationService:
             # Capture customer/passenger name from Name1 (first non-null wins)
             if agg[pnr]["customer_name"] is None:
                 name = raw.get("Name1") or raw.get("name1")
-                if name and str(name).strip().lower() not in ("nan", "none", ""):
-                    agg[pnr]["customer_name"] = str(name).strip()
+                name = _clean_text(name)
+                if name:
+                    agg[pnr]["customer_name"] = name
 
         result = {}
         for pnr, v in agg.items():
@@ -430,7 +529,7 @@ class ReconciliationService:
 
     def _aggregate_gross_fare(
         self, sheet_map: dict, sheet_key: str
-    ) -> dict[str, float]:
+    ) -> dict[str, dict]:
         """
         Aggregate GROSS FARE by PNR for CASH x SAle or CASH X Re.
 
@@ -441,45 +540,133 @@ class ReconciliationService:
         sheet_ids = sheet_map.get(sheet_key)
         pnr_col = "Formatted PNR" if sheet_key == _SHEET_CASHX_SALE else "PNR formatted"
 
-        agg: dict[str, float] = defaultdict(float)
+        agg: dict[str, dict] = defaultdict(
+            lambda: {"amount": 0.0, "client_name": None, "client_code": None}
+        )
 
         for raw in self._iter_rows(sheet_ids):
             pnr = str(raw.get(pnr_col) or "").strip()
             if not pnr or pnr.lower() in ("nan", "none", ""):
                 continue
-            agg[pnr] += _safe_float(raw.get("GROSS FARE"))
+            agg[pnr]["amount"] += _safe_float(raw.get("GROSS FARE"))
+            if agg[pnr]["client_name"] is None:
+                agg[pnr]["client_name"] = _extract_client_name(raw)
+            if agg[pnr]["client_code"] is None:
+                agg[pnr]["client_code"] = _extract_client_code(raw)
 
-        result = {pnr: round(v, 2) for pnr, v in agg.items()}
+        result = {
+            pnr: {
+                "amount": round(v["amount"], 2),
+                "client_name": v["client_name"],
+                "client_code": v["client_code"],
+            }
+            for pnr, v in agg.items()
+        }
         logger.info("%s: %s unique PNRs aggregated.", sheet_key, len(result))
         return result
 
-    def _aggregate_spyj_sale(self, sheet_map: dict) -> dict[str, float]:
+    def _build_cashx_client_by_ticket(self, sheet_map: dict) -> dict[str, dict]:
+        """Build ticket-number → client lookup from CASH X sale/refund rows."""
+        result: dict[str, dict] = {}
+        for sheet_key in (_SHEET_CASHX_SALE, _SHEET_CASHX_RE):
+            sheet_ids = sheet_map.get(sheet_key)
+            for raw in self._iter_rows(sheet_ids):
+                ticket = _normalize_ticket_number(raw.get("TKT NO"))
+                if not ticket or ticket in result:
+                    continue
+                client_name = _extract_client_name(raw)
+                client_code = _extract_client_code(raw)
+                if client_name or client_code:
+                    for key in _ticket_lookup_keys(raw.get("TKT NO")):
+                        result.setdefault(
+                            key,
+                            {"client_name": client_name, "client_code": client_code},
+                        )
+
+        logger.info("CASH X: %s ticket client mappings built.", len(result))
+        return result
+
+    def _aggregate_spyj_sale(
+        self,
+        sheet_map: dict,
+        cashx_client_by_ticket: dict[str, dict] | None = None,
+    ) -> dict[str, dict]:
         """Aggregate SPYJ SALE: Total Amount by GDS PNR."""
         sheet_ids = sheet_map.get(_SHEET_SPYJ_SALE)
-        agg: dict[str, float] = defaultdict(float)
+        agg: dict[str, dict] = defaultdict(
+            lambda: {"amount": 0.0, "client_name": None, "client_code": None}
+        )
+        client_lookup = cashx_client_by_ticket or {}
 
         for raw in self._iter_rows(sheet_ids):
             pnr = str(raw.get("GDS PNR") or "").strip()
             if not pnr or pnr.lower() in ("nan", "none", ""):
                 continue
-            agg[pnr] += _safe_float(raw.get("Total Amount"))
+            agg[pnr]["amount"] += _safe_float(raw.get("Total Amount"))
+            if agg[pnr]["client_name"] is None:
+                agg[pnr]["client_name"] = _extract_client_name(raw)
+            if agg[pnr]["client_code"] is None:
+                agg[pnr]["client_code"] = _extract_client_code(raw)
+            if agg[pnr]["client_name"] is None or agg[pnr]["client_code"] is None:
+                for ticket in _ticket_lookup_keys(raw.get("Ticket No") or raw.get("Ticket Number")):
+                    client = client_lookup.get(ticket)
+                    if not client:
+                        continue
+                    agg[pnr]["client_name"] = agg[pnr]["client_name"] or client.get("client_name")
+                    agg[pnr]["client_code"] = agg[pnr]["client_code"] or client.get("client_code")
+                    if agg[pnr]["client_name"] and agg[pnr]["client_code"]:
+                        break
 
-        result = {pnr: round(v, 2) for pnr, v in agg.items()}
+        result = {
+            pnr: {
+                "amount": round(v["amount"], 2),
+                "client_name": v["client_name"],
+                "client_code": v["client_code"],
+            }
+            for pnr, v in agg.items()
+        }
         logger.info("SPYJ SALE: %s unique PNRs aggregated.", len(result))
         return result
 
-    def _aggregate_spyj_refund(self, sheet_map: dict) -> dict[str, float]:
+    def _aggregate_spyj_refund(
+        self,
+        sheet_map: dict,
+        cashx_client_by_ticket: dict[str, dict] | None = None,
+    ) -> dict[str, dict]:
         """Aggregate SPJY Refund: Total Refund Amount by GDS PNR."""
         sheet_ids = sheet_map.get(_SHEET_SPJY_REF)
-        agg: dict[str, float] = defaultdict(float)
+        agg: dict[str, dict] = defaultdict(
+            lambda: {"amount": 0.0, "client_name": None, "client_code": None}
+        )
+        client_lookup = cashx_client_by_ticket or {}
 
         for raw in self._iter_rows(sheet_ids):
             pnr = str(raw.get("GDS PNR") or "").strip()
             if not pnr or pnr.lower() in ("nan", "none", ""):
                 continue
-            agg[pnr] += _safe_float(raw.get("Total Refund Amount"))
+            agg[pnr]["amount"] += _safe_float(raw.get("Total Refund Amount"))
+            if agg[pnr]["client_name"] is None:
+                agg[pnr]["client_name"] = _extract_client_name(raw)
+            if agg[pnr]["client_code"] is None:
+                agg[pnr]["client_code"] = _extract_client_code(raw)
+            if agg[pnr]["client_name"] is None or agg[pnr]["client_code"] is None:
+                for ticket in _ticket_lookup_keys(raw.get("TicketNumbers")):
+                    client = client_lookup.get(ticket)
+                    if not client:
+                        continue
+                    agg[pnr]["client_name"] = agg[pnr]["client_name"] or client.get("client_name")
+                    agg[pnr]["client_code"] = agg[pnr]["client_code"] or client.get("client_code")
+                    if agg[pnr]["client_name"] and agg[pnr]["client_code"]:
+                        break
 
-        result = {pnr: round(v, 2) for pnr, v in agg.items()}
+        result = {
+            pnr: {
+                "amount": round(v["amount"], 2),
+                "client_name": v["client_name"],
+                "client_code": v["client_code"],
+            }
+            for pnr, v in agg.items()
+        }
         logger.info("SPJY Refund: %s unique PNRs aggregated.", len(result))
         return result
 
@@ -489,8 +676,8 @@ class ReconciliationService:
 
     @staticmethod
     def _merge_sale_refund(
-        sale_agg: dict[str, float],
-        refund_agg: dict[str, float],
+        sale_agg: dict[str, dict],
+        refund_agg: dict[str, dict],
     ) -> dict[str, dict]:
         """
         Combine separate sale and refund dicts (both keyed by PNR) into a
@@ -502,12 +689,20 @@ class ReconciliationService:
         all_pnrs = set(sale_agg.keys()) | set(refund_agg.keys())
         result = {}
         for pnr in all_pnrs:
-            sale   = sale_agg.get(pnr, 0.0)
-            refund = refund_agg.get(pnr, 0.0)
+            sale_row = sale_agg.get(pnr, {})
+            refund_row = refund_agg.get(pnr, {})
+            sale = sale_row.get("amount", 0.0) if isinstance(sale_row, dict) else sale_row
+            refund = refund_row.get("amount", 0.0) if isinstance(refund_row, dict) else refund_row
+            sale_client = sale_row.get("client_name") if isinstance(sale_row, dict) else None
+            refund_client = refund_row.get("client_name") if isinstance(refund_row, dict) else None
+            sale_client_code = sale_row.get("client_code") if isinstance(sale_row, dict) else None
+            refund_client_code = refund_row.get("client_code") if isinstance(refund_row, dict) else None
             result[pnr] = {
-                "sale":   round(sale, 2),
-                "refund": round(refund, 2),
-                "net":    round(sale - refund, 2),
+                "sale":        round(sale, 2),
+                "refund":      round(refund, 2),
+                "net":         round(sale - refund, 2),
+                "client_name": sale_client or refund_client,
+                "client_code": sale_client_code or refund_client_code,
             }
         return result
 

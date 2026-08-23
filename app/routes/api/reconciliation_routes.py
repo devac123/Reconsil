@@ -301,10 +301,14 @@ def get_reconciliation_results(
                 "cost_refund":    r.cost_refund,
                 "cost_net":       r.cost_net,
                 "cashx_pnr":      r.cashx_pnr,
+                "cashx_client_name": r.cashx_client_name,
+                "cashx_client_code": r.cashx_client_code,
                 "cashx_amount":   r.cashx_amount,
                 "cashx_refund":   r.cashx_refund,
                 "cashx_net":      r.cashx_net,
                 "spyj_pnr":       r.spyj_pnr,
+                "spyj_client_name": r.spyj_client_name,
+                "spyj_client_code": r.spyj_client_code,
                 "spyj_amount":    r.spyj_amount,
                 "spyj_refund":    r.spyj_refund,
                 "spyj_net":       r.spyj_net,
@@ -468,7 +472,7 @@ def _build_excel(
     ws.title = "Reconciliation"
 
     # ── Title rows ──────────────────────────────────────────────────────
-    ws.merge_cells("A1:R1")
+    ws.merge_cells("A1:U1")
     title_cell = ws["A1"]
     title_cell.value = "Indigo Reconciliation - Cost vs Revenue"
     title_cell.font  = Font(bold=True, size=14, color="FFFFFF")
@@ -476,7 +480,7 @@ def _build_excel(
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 24
 
-    ws.merge_cells("A2:R2")
+    ws.merge_cells("A2:U2")
     sub_cell = ws["A2"]
     sub_cell.value = f"File: {uploaded_file.original_filename}"
     sub_cell.font  = Font(italic=True, color="595959")
@@ -486,18 +490,18 @@ def _build_excel(
     # Columns:
     #  A        = Parental PNR
     #  B–E      = Cost (AIR COST TRN)
-    #  F–I      = CASH X (CASH x SAle / CASH X Re)
-    #  J–M      = SPYJ Online Sale
-    #  N        = Variance
-    #  O–Q      = Remarks
+    #  F–K      = CASH X (CASH x SAle / CASH X Re)
+    #  L–Q      = SPYJ Online Sale
+    #  R        = Variance
+    #  S–U      = Remarks
 
     group_headers = [
         (1,  1,  "Parental PNR",   _HDR_FILL_1),
         (2,  5,  "Cost",           _HDR_FILL_2),
-        (6,  9,  "CASH X",         _HDR_FILL_2),
-        (10, 13, "SPYJ Online Sale",_HDR_FILL_2),
-        (14, 14, "VARIANCE",       _HDR_FILL_VAR),
-        (15, 17, "Remarks",        _HDR_FILL_1),
+        (6, 11,  "CASH X",         _HDR_FILL_2),
+        (12, 17, "SPYJ Online Sale",_HDR_FILL_2),
+        (18, 18, "VARIANCE",       _HDR_FILL_VAR),
+        (19, 21, "Remarks",        _HDR_FILL_1),
     ]
 
     for start_col, end_col, label, fill in group_headers:
@@ -523,10 +527,10 @@ def _build_excel(
     col_headers = [
         "Parental PNR",               # A
         "PNR",    "Sale",   "Refund",  "Net",     # B–E  Cost
-        "PNR",    "Amount", "Refund",  "Net",     # F–I  CASH X
-        "PNR",    "Amount", "Refund",  "Net",     # J–M  SPYJ
-        "Cost−CashX−SPYJ",            # N  Variance
-        "Remark", "Revised Remark", "Final Remark", # O–Q
+        "PNR",    "Client Name", "Client Code", "Amount", "Refund",  "Net",     # F–K  CASH X
+        "PNR",    "Client Name", "Client Code", "Amount", "Refund",  "Net",     # L–Q  SPYJ
+        "Cost−CashX−SPYJ",            # R  Variance
+        "Remark", "Revised Remark", "Final Remark", # S–U
     ]
 
     for col_idx, header in enumerate(col_headers, start=1):
@@ -545,8 +549,8 @@ def _build_excel(
         row_data = [
             rec.pnr,
             rec.cost_pnr,   rec.cost_sale,   rec.cost_refund,   rec.cost_net,
-            rec.cashx_pnr,  rec.cashx_amount, rec.cashx_refund, rec.cashx_net,
-            rec.spyj_pnr,   rec.spyj_amount,  rec.spyj_refund,  rec.spyj_net,
+            rec.cashx_pnr,  rec.cashx_client_name, rec.cashx_client_code, rec.cashx_amount, rec.cashx_refund, rec.cashx_net,
+            rec.spyj_pnr,   rec.spyj_client_name,  rec.spyj_client_code,  rec.spyj_amount,  rec.spyj_refund,  rec.spyj_net,
             rec.variance,
             rec.remark,     rec.revised_remark, rec.final_remark,
         ]
@@ -558,7 +562,7 @@ def _build_excel(
             if remark_fill:
                 cell.fill = remark_fill
             # Right-align numeric columns
-            if col_idx in (3, 4, 5, 7, 8, 9, 11, 12, 13, 14):
+            if col_idx in (3, 4, 5, 9, 10, 11, 15, 16, 17, 18):
                 cell.alignment = Alignment(horizontal="right")
                 if isinstance(value, float):
                     cell.number_format = "#,##0.00"
@@ -567,10 +571,10 @@ def _build_excel(
     widths = {
         1: 14,  # PNR
         2: 12,  3: 12,  4: 12,  5: 12,   # Cost
-        6: 12,  7: 12,  8: 12,  9: 12,   # CASH X
-        10: 12, 11: 12, 12: 12, 13: 12,  # SPYJ
-        14: 16,                           # Variance
-        15: 28, 16: 24, 17: 24,           # Remarks
+        6: 12,  7: 24,  8: 14,  9: 12,  10: 12, 11: 12,   # CASH X
+        12: 12, 13: 24, 14: 14, 15: 12, 16: 12, 17: 12,  # SPYJ
+        18: 16,                           # Variance
+        19: 28, 20: 24, 21: 24,           # Remarks
     }
     for col, width in widths.items():
         ws.column_dimensions[get_column_letter(col)].width = width
@@ -579,7 +583,7 @@ def _build_excel(
     ws.freeze_panes = "B5"
 
     # ── Auto-filter on the data ───────────────────────────────────────────
-    ws.auto_filter.ref = f"A4:{get_column_letter(17)}{4 + len(results)}"
+    ws.auto_filter.ref = f"A4:{get_column_letter(21)}{4 + len(results)}"
 
     buf = io.BytesIO()
     wb.save(buf)

@@ -61,12 +61,16 @@ class ReconciliationResult(Base):
 
     # ── CASH X side (CASH x SAle − CASH X Re) ───────────────────────────
     cashx_pnr: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    cashx_client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cashx_client_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     cashx_amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     cashx_refund: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     cashx_net: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
     # ── SPYJ Online side (SPYJ SALE − SPJY Refund) ──────────────────────
     spyj_pnr: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    spyj_client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    spyj_client_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     spyj_amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     spyj_refund: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     spyj_net: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
