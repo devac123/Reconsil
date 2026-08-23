@@ -172,6 +172,23 @@ def _extract_client_code(raw: dict) -> str | None:
     )
 
 
+def _extract_booking_id(raw: dict) -> str | None:
+    """Resolve booking ID from common AIR COST TRN headers."""
+    return _first_text(
+        raw,
+        "Booking ID",
+        "BookingID",
+        "Booking Id",
+        "BOOKING ID",
+        "BOOKINGID",
+        "booking_id",
+        "Booking Number",
+        "BookingNumber",
+        "RecordLocator",
+        "GDS_recordlocator",
+    )
+
+
 def _normalize_ticket_number(value) -> str | None:
     """Return only ticket-number digits so cross-sheet joins survive suffixes."""
     text_value = _clean_text(value)
@@ -380,6 +397,7 @@ class ReconciliationService:
                 "uploaded_file_id": result_file_id,
                 "pnr":              pnr,
                 "booking_date":     c["booking_date"] if c else None,
+                "booking_id":       c["booking_id"] if c else None,
                 "customer_name":    c["customer_name"] if c else None,
 
                 "cost_pnr":    pnr if c else "not found",
@@ -487,7 +505,13 @@ class ReconciliationService:
         """
         sheet_ids = sheet_map.get(_SHEET_AIR_COST)
         agg: dict[str, dict] = defaultdict(
-            lambda: {"sale": 0.0, "refund": 0.0, "booking_date": None, "customer_name": None}
+            lambda: {
+                "sale": 0.0,
+                "refund": 0.0,
+                "booking_date": None,
+                "booking_id": None,
+                "customer_name": None,
+            }
         )
 
         for raw in self._iter_rows(sheet_ids):
@@ -509,6 +533,12 @@ class ReconciliationService:
                 booking_date = _safe_date(raw_date)
                 if booking_date:
                     agg[pnr]["booking_date"] = booking_date
+
+            # Capture Booking ID (first non-null value wins)
+            if agg[pnr]["booking_id"] is None:
+                booking_id = _extract_booking_id(raw)
+                if booking_id:
+                    agg[pnr]["booking_id"] = booking_id
 
             # Capture customer/passenger name from Name1 (first non-null wins)
             if agg[pnr]["customer_name"] is None:

@@ -452,6 +452,7 @@
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">#</th>
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">PNR</th>
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Booking Date</th>
+                <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Booking ID</th>
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Customer Name</th>
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Amount</th>
                 <th class="px-md py-sm font-label-md text-label-md text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Refund</th>
@@ -472,7 +473,7 @@
             </thead>
             <tbody id="recon-tbody">
               <tr>
-                <td colspan="19" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+                <td colspan="20" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
                   Click the <strong>Run</strong> button to run reconciliation, or switch to this tab to load existing results.
                 </td>
               </tr>
@@ -876,7 +877,7 @@
     const tbody = document.getElementById('recon-tbody');
     tbody.innerHTML = `
       <tr>
-        <td colspan="19" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+        <td colspan="20" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
           <span class="material-symbols-outlined animate-spin text-outline block mx-auto mb-sm">sync</span>
           Loading…
         </td>
@@ -926,7 +927,7 @@
       if (!data.results || !data.results.length) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="19" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
+            <td colspan="20" class="px-md py-lg text-center text-on-surface-variant font-body-sm text-body-sm">
               No reconciliation results found. Click <strong>Run</strong> to generate them.
             </td>
           </tr>`;
@@ -962,6 +963,7 @@
             <td class="px-md py-sm font-data-mono text-data-mono text-on-surface-variant text-center border-r border-outline-variant/50 w-[60px]">${rowNum++}</td>
             <td class="px-md py-sm font-data-mono text-data-mono text-on-surface whitespace-nowrap">${escapeHtml(r.pnr)}</td>
             <td class="px-md py-sm font-data-mono text-data-mono text-on-surface whitespace-nowrap">${escapeHtml(bookingDate)}</td>
+            <td class="px-md py-sm font-data-mono text-data-mono text-on-surface whitespace-nowrap">${escapeHtml(r.booking_id || '—')}</td>
             <td class="px-md py-sm font-data-mono text-data-mono text-on-surface whitespace-nowrap">${escapeHtml(r.customer_name || '—')}</td>
             <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap">${fmt(r.cost_sale)}</td>
             <td class="px-md py-sm font-data-mono text-data-mono text-on-surface text-right whitespace-nowrap">${fmt(r.cost_refund)}</td>
@@ -991,7 +993,7 @@
     } catch (err) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="19" class="px-md py-lg text-center font-body-sm text-body-sm text-error">
+          <td colspan="20" class="px-md py-lg text-center font-body-sm text-body-sm text-error">
             <span class="material-symbols-outlined text-[24px] block mx-auto mb-sm">error</span>
             ${escapeHtml(err.message)}
           </td>

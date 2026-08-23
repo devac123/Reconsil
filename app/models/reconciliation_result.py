@@ -49,6 +49,9 @@ class ReconciliationResult(Base):
         nullable=True,
     )
 
+    # Booking ID taken from AIR COST TRN when the source sheet provides it
+    booking_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
     # Customer / passenger name taken from AIR COST TRN (Name1 column)
     customer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 

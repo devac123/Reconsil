@@ -53,10 +53,18 @@ def ensure_schema() -> None:
     # Re-read columns in case we just added booking_date above
     recon_columns = _recon_columns()
 
+    if "booking_id" not in recon_columns:
+        logger.info("Adding reconciliation_results.booking_id column.")
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE reconciliation_results ADD COLUMN booking_id VARCHAR(100) NULL AFTER booking_date"))
+
+    # Re-read columns in case we just added booking_id above
+    recon_columns = _recon_columns()
+
     if "customer_name" not in recon_columns:
         logger.info("Adding reconciliation_results.customer_name column.")
         with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE reconciliation_results ADD COLUMN customer_name VARCHAR(255) NULL AFTER booking_date"))
+            conn.execute(text("ALTER TABLE reconciliation_results ADD COLUMN customer_name VARCHAR(255) NULL AFTER booking_id"))
 
     # Re-read columns in case we just added customer_name above
     recon_columns = _recon_columns()
