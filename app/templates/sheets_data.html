@@ -506,6 +506,20 @@
   const FILE_ID = {{ uploaded_file.id }};
   const UPLOADED_FILE_IDS = {{ uploaded_file_ids | tojson }};
 
+  async function readResponseBody(resp) {
+    const contentType = resp.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      return await resp.json();
+    }
+
+    const text = await resp.text();
+    return {
+      detail: text
+        ? text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240)
+        : `HTTP ${resp.status} ${resp.statusText}`,
+    };
+  }
+
   // Per-sheet state: { sheet_id: { page, pageSize, totalRows, totalPages } }
   const state = {};
 
@@ -691,11 +705,11 @@
       const resp = await fetch(url);
 
       if (!resp.ok) {
-        const err = await resp.json();
+        const err = await readResponseBody(resp);
         throw new Error(err.detail || 'Request failed');
       }
 
-      const data = await resp.json();
+      const data = await readResponseBody(resp);
 
       // Update state
       s.totalRows  = data.total_rows;
@@ -831,7 +845,7 @@
           })
         : await fetch(`/files/${FILE_ID}/reconcile`, { method: 'POST' });
       if (!resp.ok) {
-        const err = await resp.json();
+        const err = await readResponseBody(resp);
         throw new Error(err.detail || 'Reconciliation failed');
       }
       await loadReconciliationData(1);
@@ -888,10 +902,10 @@
 
       const resp = await fetch(`/files/${FILE_ID}/reconcile/results?${params}`);
       if (!resp.ok) {
-        const err = await resp.json();
+        const err = await readResponseBody(resp);
         throw new Error(err.detail || 'Failed to load results');
       }
-      const data = await resp.json();
+      const data = await readResponseBody(resp);
       reconState.totalRows  = data.total;
       reconState.totalPages = data.total_pages;
 
@@ -989,7 +1003,7 @@
     try {
       const resp = await fetch(`/files/${FILE_ID}/reconcile/summary`);
       if (!resp.ok) return;
-      const data = await resp.json();
+      const data = await readResponseBody(resp);
 
       const container = document.getElementById('recon-summary');
       if (!data.by_remark || !data.by_remark.length) {

@@ -140,6 +140,20 @@
 
 {% block scripts %}
 <script>
+async function readResponseBody(resp) {
+  const contentType = resp.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return await resp.json();
+  }
+
+  const text = await resp.text();
+  return {
+    detail: text
+      ? text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240)
+      : `HTTP ${resp.status} ${resp.statusText}`,
+  };
+}
+
 async function runReconciliation(fileId) {
   const btn         = document.getElementById('btn-reconcile');
   const label       = document.getElementById('btn-reconcile-label');
@@ -157,7 +171,7 @@ async function runReconciliation(fileId) {
 
   try {
     const resp = await fetch(`/files/${fileId}/reconcile`, { method: 'POST' });
-    const data = await resp.json();
+    const data = await readResponseBody(resp);
 
     if (resp.ok) {
       statusBox.className = 'rounded-lg px-lg py-md mb-lg text-center font-body-md text-body-md '
