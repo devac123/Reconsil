@@ -1,0 +1,19 @@
+---
+description: Project architecture and where to change code
+alwaysApply: true
+---
+
+# Architecture
+
+This is a FastAPI reconciliation app. Prefer existing layers:
+
+- Routes: HTTP, status codes, SSE/StreamingResponse, `Depends(get_db)`
+- Services: ingest, sheet matching, reconciliation, Excel styling
+- Repositories: queries and bulk inserts
+- Models + `app/database/schema.py`: table shape and lightweight migrations
+
+Startup always calls `ensure_schema()`. New columns need a model field and an ALTER in `schema.py`.
+
+Read `context.md` for the business problem, sheet names, and formula. Read `structure.md` for tables and API paths.
+
+Never hardcode secrets into new files. `app/database/database.py` already holds the local MySQL URL; do not copy it into docs or commits.

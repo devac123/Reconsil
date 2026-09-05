@@ -151,6 +151,22 @@ input[type="file"]::file-selector-button { display: none; }
           <p id="res-rows" class="font-data-mono text-data-mono text-xl text-on-surface">—</p>
         </div>
       </div>
+      <div id="sheet-selection-panel"
+           class="hidden mb-lg border border-outline-variant rounded bg-surface overflow-hidden">
+        <div class="flex items-center justify-between gap-md px-md py-sm border-b border-outline-variant">
+          <div>
+            <p class="font-label-md text-label-md text-on-surface">Map Sheets for Merge</p>
+            <p id="sheet-selection-summary"
+               class="font-body-sm text-body-sm text-outline text-[12px]">Map each sheet to a reconciliation type</p>
+          </div>
+          <button id="toggle-sheets-btn" type="button"
+                  class="border border-outline-variant text-on-surface font-label-md text-label-md px-md h-[32px] rounded
+                         hover:bg-surface-container transition-colors">
+            Auto Map
+          </button>
+        </div>
+        <div id="sheet-selection-list" class="max-h-[280px] overflow-y-auto"></div>
+      </div>
       <div class="flex gap-sm">
         <a href="/uploaded-files"
            class="bg-primary text-on-primary font-label-md text-label-md px-lg py-[10px] rounded
@@ -199,6 +215,10 @@ input[type="file"]::file-selector-button { display: none; }
   const resultSuccess  = document.getElementById('result-success');
   const resultError    = document.getElementById('result-error');
   const combinedBtn    = document.getElementById('combined-reconcile-btn');
+  const sheetPanel     = document.getElementById('sheet-selection-panel');
+  const sheetList      = document.getElementById('sheet-selection-list');
+  const sheetSummary   = document.getElementById('sheet-selection-summary');
+  const toggleSheetsBtn = document.getElementById('toggle-sheets-btn');
 
   // Progress card
   const progressCard   = document.getElementById('progress-card');
@@ -211,6 +231,16 @@ input[type="file"]::file-selector-button { display: none; }
   let selectedFiles = [];
   let activeSSE    = null;   // holds the EventSource so we can close it
   let uploadedFileIds = [];
+  let uploadedFiles = [];
+
+  const SHEET_ROLES = [
+    { value: 'air cost trn', label: 'AIR COST TRN' },
+    { value: 'cash x sale', label: 'CASH X Sale' },
+    { value: 'cash x re', label: 'CASH X Refund' },
+    { value: 'spyj sale', label: 'SPYJ Sale' },
+    { value: 'spjy refund', label: 'SPYJ Refund' },
+    { value: 'ignore', label: 'Ignore' },
+  ];
 
   // ── Drag & Drop ──────────────────────────────────────────────────────────
   ['dragenter','dragover','dragleave','drop'].forEach(ev =>
@@ -260,6 +290,8 @@ input[type="file"]::file-selector-button { display: none; }
     resultError.classList.add('hidden');
     progressCard.classList.add('hidden');
     combinedBtn.classList.add('hidden');
+    sheetPanel.classList.add('hidden');
+    sheetList.innerHTML = '';
   }
 
   removeBtn.addEventListener('click', () => {
@@ -270,6 +302,122 @@ input[type="file"]::file-selector-button { display: none; }
     dropZone.style.display = '';
     progressCard.classList.add('hidden');
     combinedBtn.classList.add('hidden');
+    sheetPanel.classList.add('hidden');
+    sheetList.innerHTML = '';
+  });
+
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;',
+    }[char]));
+  }
+
+  function normaliseName(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  function inferSheetRole(sheetName, fileName = '') {
+    const text = normaliseName(sheetName + ' ' + fileName);
+    const tokens = new Set(text.split(/\s+/).filter(Boolean));
+    const compact = text.replace(/\s+/g, '');
+
+    if (compact.includes('recon')) return 'ignore';
+    if (compact.includes('cashx') || (tokens.has('cash') && tokens.has('x'))) {
+      if (tokens.has('refund') || tokens.has('ref') || tokens.has('re')) return 'cash x re';
+      if (tokens.has('sale') || tokens.has('sales')) return 'cash x sale';
+    }
+    if (tokens.has('spyj') || tokens.has('spjy') || tokens.has('online')) {
+      if (tokens.has('refund') || tokens.has('fund') || tokens.has('ref')) return 'spjy refund';
+      if (tokens.has('sale') || tokens.has('sales')) return 'spyj sale';
+    }
+    if (tokens.has('cost') || compact.includes('cost')) return 'air cost trn';
+    return 'ignore';
+  }
+
+  function getSheetRoleMap() {
+    const roleMap = {};
+    document.querySelectorAll('.merge-sheet-role').forEach(select => {
+      roleMap[select.dataset.sheetId] = select.value;
+    });
+    return roleMap;
+  }
+
+  function getSelectedSheetIds() {
+    return Object.entries(getSheetRoleMap())
+      .filter(([, role]) => role !== 'ignore')
+      .map(([sheetId]) => parseInt(sheetId, 10))
+      .filter(Number.isFinite);
+  }
+
+  function updateSheetSelectionSummary() {
+    const total = document.querySelectorAll('.merge-sheet-role').length;
+    const selected = getSelectedSheetIds().length;
+    const ignored = total - selected;
+    sheetSummary.textContent =
+      selected + ' mapped, ' + ignored + ' ignored';
+    toggleSheetsBtn.textContent = 'Auto Map';
+    combinedBtn.disabled = selected === 0;
+  }
+
+  function buildRoleOptions(selectedRole) {
+    return SHEET_ROLES.map(role => `
+      <option value="${role.value}" ${role.value === selectedRole ? 'selected' : ''}>
+        ${role.label}
+      </option>
+    `).join('');
+  }
+
+  function renderSheetSelection(files) {
+    const filesWithSheets = (files || []).filter(file => (file.sheets || []).length);
+    if (filesWithSheets.length < 2) {
+      sheetPanel.classList.add('hidden');
+      sheetList.innerHTML = '';
+      return;
+    }
+
+    sheetList.innerHTML = filesWithSheets.map(file => `
+      <section class="border-b border-outline-variant last:border-b-0">
+        <div class="px-md py-sm bg-surface-container-low">
+          <p class="font-label-md text-label-md text-on-surface truncate">${escapeHtml(file.filename)}</p>
+        </div>
+        <div class="divide-y divide-outline-variant">
+          ${(file.sheets || []).map(sheet => {
+            const selectedRole = inferSheetRole(sheet.name, file.filename);
+            return `
+            <div class="grid grid-cols-[minmax(0,1fr)_190px_auto] items-center gap-md px-md py-sm hover:bg-surface-container">
+              <span class="font-body-sm text-body-sm text-on-surface truncate">${escapeHtml(sheet.name)}</span>
+              <select class="merge-sheet-role border border-outline-variant rounded px-sm h-[34px] bg-surface text-on-surface font-body-sm text-body-sm"
+                      data-sheet-id="${sheet.id}"
+                      data-sheet-name="${escapeHtml(sheet.name)}"
+                      data-file-name="${escapeHtml(file.filename)}">
+                ${buildRoleOptions(selectedRole)}
+              </select>
+              <span class="font-data-mono text-data-mono text-outline text-[11px] whitespace-nowrap">
+                ${(sheet.total_rows || 0).toLocaleString()} rows
+              </span>
+            </div>
+          `;
+          }).join('')}
+        </div>
+      </section>
+    `).join('');
+
+    sheetList.querySelectorAll('.merge-sheet-role').forEach(select => {
+      select.addEventListener('change', updateSheetSelectionSummary);
+    });
+    sheetPanel.classList.remove('hidden');
+    updateSheetSelectionSummary();
+  }
+
+  toggleSheetsBtn.addEventListener('click', () => {
+    document.querySelectorAll('.merge-sheet-role').forEach(select => {
+      select.value = inferSheetRole(select.dataset.sheetName || '', select.dataset.fileName || '');
+    });
+    updateSheetSelectionSummary();
   });
 
   // ── Progress helpers ─────────────────────────────────────────────────────
@@ -382,6 +530,7 @@ input[type="file"]::file-selector-button { display: none; }
         // Show success card
         const r = job.result || {};
         uploadedFileIds = r.uploaded_file_ids || (r.uploaded_file_id ? [r.uploaded_file_id] : []);
+        uploadedFiles = r.files || (r.uploaded_file_id ? [r] : []);
         document.getElementById('res-org').textContent     = r.organization      || '—';
         document.getElementById('res-file-id').textContent =
           r.uploaded_file_ids ? r.uploaded_file_ids.join(', ') : (r.uploaded_file_id || '—');
@@ -393,8 +542,10 @@ input[type="file"]::file-selector-button { display: none; }
         resultError.classList.add('hidden');
         if (uploadedFileIds.length > 1) {
           combinedBtn.classList.remove('hidden');
+          renderSheetSelection(uploadedFiles);
         } else {
           combinedBtn.classList.add('hidden');
+          sheetPanel.classList.add('hidden');
         }
         startBtn.disabled    = false;
         startBtn.textContent = 'Start Upload';
@@ -429,13 +580,24 @@ input[type="file"]::file-selector-button { display: none; }
 
   combinedBtn.addEventListener('click', async () => {
     if (uploadedFileIds.length < 2) return;
+    const selectedSheetIds = getSelectedSheetIds();
+    const sheetRoleMap = getSheetRoleMap();
+    if (!selectedSheetIds.length) {
+      document.getElementById('error-message').textContent = 'Please map at least one sheet before merge.';
+      resultError.classList.remove('hidden');
+      return;
+    }
     combinedBtn.disabled = true;
     combinedBtn.textContent = 'Reconciling…';
     try {
       const resp = await fetch('/files/reconcile-combined', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uploaded_file_ids: uploadedFileIds }),
+        body: JSON.stringify({
+          uploaded_file_ids: uploadedFileIds,
+          selected_sheet_ids: selectedSheetIds,
+          sheet_role_map: sheetRoleMap,
+        }),
       });
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok) {

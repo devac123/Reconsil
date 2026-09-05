@@ -27,7 +27,9 @@ import logging
 import math
 from datetime import date, datetime, time
 from decimal import Decimal
+from difflib import SequenceMatcher
 from pathlib import Path
+import re
 from typing import Any, Generator
 
 import pandas as pd
@@ -49,6 +51,7 @@ BATCH_SIZE = 500
 # Must match the String(n) lengths declared in the ORM model.
 _MAX_PNR_LEN            = 100
 _MAX_TICKET_NUMBER_LEN  = 100
+_SHEET_MATCH_THRESHOLD  = 0.80
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +91,104 @@ _SHEET_FIELD_MAP: dict[str, dict[str, str | None]] = {
     },
 }
 
+_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "RecordLocator": ("RecordLocator", "Record Locator", "PNR", "GDS PNR"),
+    "Formatted PNR": ("Formatted PNR", "PNR formatted", "PNR", "GDS PNR", "RecordLocator"),
+    "PNR formatted": ("PNR formatted", "Formatted PNR", "PNR", "GDS PNR", "RecordLocator"),
+    "GDS PNR": ("GDS PNR", "PNR", "Formatted PNR", "RecordLocator"),
+    "PNR": ("PNR", "GDS PNR", "Formatted PNR", "RecordLocator"),
+    "TKT NO": ("TKT NO", "Ticket No", "Ticket Number", "TicketNumbers", "Ticket Numbers"),
+    "Ticket No": ("Ticket No", "Ticket Number", "TicketNumbers", "Ticket Numbers", "TKT NO"),
+    "TicketNumbers": ("TicketNumbers", "Ticket Numbers", "Ticket No", "Ticket Number", "TKT NO"),
+    "Transaction Date": ("Transaction Date", "TransactionDate", "D.O.T", "DOT", "Date"),
+    "D.O.T": ("D.O.T", "DOT", "Transaction Date", "Date"),
+    "Booking Date": ("Booking Date", "BookingDate", "Transaction Date", "Date"),
+    "Refund Date and Time": (
+        "Refund Date and Time",
+        "Refund Date",
+        "RefundDate",
+        "Transaction Date",
+        "Date",
+    ),
+}
+
+
+def _normalise_name(value: str | None) -> str:
+    return re.sub(r"[^a-z0-9]", "", (value or "").strip().lower())
+
+
+def _should_skip_sheet(sheet_name: str) -> bool:
+    normalised = _normalise_name(sheet_name)
+    return any(
+        marker in normalised
+        for marker in (
+            "recon",
+            "reconsil",
+            "reconsilation",
+            "reconciliation",
+            "reconcilation",
+        )
+    )
+
+
+def _match_score(left: str, right: str) -> float:
+    left_key = _normalise_name(left)
+    right_key = _normalise_name(right)
+    if not left_key or not right_key:
+        return 0.0
+    if left_key == right_key:
+        return 1.0
+    return SequenceMatcher(None, left_key, right_key).ratio()
+
+
+def _sheet_tokens(sheet_name: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", sheet_name.lower()))
+
+
+def _sheet_token_key(sheet_name: str) -> str:
+    return _normalise_name(sheet_name)
+
+
+def _canonical_sheet_name(sheet_name: str, context_name: str | None = None) -> str:
+    tokens = _sheet_tokens(sheet_name)
+    context_tokens = _sheet_tokens(context_name or "")
+    all_tokens = tokens | context_tokens
+    token_key = _sheet_token_key(sheet_name)
+    context_key = _sheet_token_key(context_name or "")
+    all_key = token_key + context_key
+
+    if "cashx" in all_key or {"cash", "x"}.issubset(all_tokens):
+        if tokens & {"refund", "ref", "re"}:
+            return "cash x re"
+        if tokens & {"sale", "sales"}:
+            return "cash x sale"
+        if context_tokens & {"refund", "ref", "re"}:
+            return "cash x re"
+        if context_tokens & {"sale", "sales"}:
+            return "cash x sale"
+
+    if tokens & {"spyj", "spjy"} or context_tokens & {"spyj", "spjy"} or "online" in all_tokens:
+        if tokens & {"refund", "fund", "ref"}:
+            return "spjy refund"
+        if tokens & {"sale", "sales"}:
+            return "spyj sale"
+        if context_tokens & {"refund", "fund", "ref"} and not (context_tokens & {"sale", "sales"}):
+            return "spjy refund"
+        if context_tokens & {"sale", "sales"} and not (context_tokens & {"refund", "fund", "ref"}):
+            return "spyj sale"
+
+    if "cost" in all_key and not (tokens & {"recon", "reconciliation", "reconcilation"}):
+        return "air cost trn"
+
+    best_name = sheet_name.strip().lower()
+    best_score = 0.0
+    for known_name in _SHEET_FIELD_MAP:
+        score = _match_score(sheet_name, known_name)
+        if score > best_score:
+            best_name = known_name
+            best_score = score
+    return best_name if best_score >= _SHEET_MATCH_THRESHOLD else sheet_name.strip().lower()
+
 _DEFAULT_FIELD_MAP: dict[str, str | None] = {
     "pnr":              None,
     "ticket_number":    None,
@@ -95,8 +196,8 @@ _DEFAULT_FIELD_MAP: dict[str, str | None] = {
 }
 
 
-def _field_map_for(sheet_name: str) -> dict[str, str | None]:
-    return _SHEET_FIELD_MAP.get(sheet_name.strip().lower(), _DEFAULT_FIELD_MAP)
+def _field_map_for(sheet_name: str, context_name: str | None = None) -> dict[str, str | None]:
+    return _SHEET_FIELD_MAP.get(_canonical_sheet_name(sheet_name, context_name), _DEFAULT_FIELD_MAP)
 
 
 # ---------------------------------------------------------------------------
@@ -184,10 +285,25 @@ def _to_date_str(value: Any) -> str | None:
 def _extract_field(raw_data: dict, column_name: str | None) -> Any:
     if not column_name:
         return None
-    v = raw_data.get(column_name)
-    if isinstance(v, str) and not v.strip():
-        return None
-    return v
+    aliases = _FIELD_ALIASES.get(column_name, (column_name,))
+    for key in aliases:
+        v = raw_data.get(key)
+        if isinstance(v, str) and not v.strip():
+            continue
+        if not _is_null_like(v):
+            return v
+
+    raw_key_map = {_normalise_name(str(key)): key for key in raw_data.keys()}
+    for alias in aliases:
+        key = raw_key_map.get(_normalise_name(alias))
+        if key is None:
+            continue
+        v = raw_data.get(key)
+        if isinstance(v, str) and not v.strip():
+            continue
+        if not _is_null_like(v):
+            return v
+    return None
 
 
 def _extract_date_field(raw_data: dict, column_name: str | None) -> str | None:
@@ -308,6 +424,9 @@ class StagingRecordService:
         total_rows_all_sheets = 0
         sheet_row_counts: list[int] = []
         for sheet in sheets:
+            if _should_skip_sheet(sheet.sheet_name):
+                sheet_row_counts.append(0)
+                continue
             try:
                 df_tmp = FileReaderService.read_sheet_as_dataframe(path, sheet.sheet_name)
                 count  = len(df_tmp)
@@ -330,6 +449,9 @@ class StagingRecordService:
         cumulative_rows_done = 0
 
         for sheet, sheet_total in zip(sheets, sheet_row_counts):
+            if _should_skip_sheet(sheet.sheet_name):
+                logger.info("Skipping reconciliation/result sheet '%s'.", sheet.sheet_name)
+                continue
             sheet_rows = self._ingest_single_sheet(
                 path, sheet, batch_size,
                 job_id=job_id,
@@ -394,7 +516,7 @@ class StagingRecordService:
             return 0
 
         columns       = df.columns.tolist()
-        field_map     = _field_map_for(sheet.sheet_name)
+        field_map     = _field_map_for(sheet.sheet_name, file_path.name)
         total_rows    = len(df)
         total_batches = math.ceil(total_rows / batch_size)
 

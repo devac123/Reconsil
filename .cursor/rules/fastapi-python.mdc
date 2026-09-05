@@ -1,0 +1,22 @@
+---
+description: FastAPI, SQLAlchemy, and ingest conventions
+globs: app/**/*.py
+alwaysApply: false
+---
+
+# Python conventions
+
+- Python 3.12, `str | None` unions, SQLAlchemy 2 `Mapped` / `mapped_column`
+- Routers: `file_routes` and `reconciliation_routes` share prefix `/files`; register API routers before `pages_router`
+- Async upload uses a background `threading.Thread` plus `progress_store` and SSE at `/files/progress/{job_id}`
+- Staging ingest commits in 500-row batches; keep raw Excel rows in `staging_records.raw_data` JSON
+- Auto-detect Excel headers in the first 20 rows (`File_reader.py`)
+- Starlette templates: `templates.TemplateResponse(request, "file.html", context={...})`
+
+```python
+# BAD
+templates.TemplateResponse("upload.html", {"request": request})
+
+# GOOD
+templates.TemplateResponse(request, "upload.html", context={})
+```

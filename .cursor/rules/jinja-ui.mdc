@@ -1,0 +1,13 @@
+---
+description: Jinja templates, Tailwind tokens, and client JS
+globs: app/templates/**/*.html
+alwaysApply: false
+---
+
+# UI
+
+Extend `base.html`. Keep titles in `{% block title %}`. Use existing Tailwind theme tokens (`bg-surface`, `text-on-surface`, `bg-primary-container`, etc.), Inter, and Material Symbols.
+
+Upload progress uses `EventSource` against `/files/progress/{job_id}`. Sheet and result views use `fetch` plus query params for filters and pagination.
+
+Do not introduce a SPA framework. Keep page JS inline or in the template unless a shared pattern already exists. After UI changes, verify the real page flow (upload, files list, sheets, reconcile, download), not only a screenshot.

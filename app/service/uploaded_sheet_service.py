@@ -7,6 +7,7 @@ one :class:`~app.models.uploaded_sheet.UploadedSheet` record per worksheet.
 
 import logging
 from pathlib import Path
+import re
 
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,24 @@ from app.repository.uploaded_sheet_repository import UploadedSheetRepository
 from app.service.File_reader import FileReaderService
 
 logger = logging.getLogger(__name__)
+
+
+def _normalise_sheet_name(sheet_name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", sheet_name.strip().lower())
+
+
+def _should_skip_sheet(sheet_name: str) -> bool:
+    normalised = _normalise_sheet_name(sheet_name)
+    return any(
+        marker in normalised
+        for marker in (
+            "recon",
+            "reconsil",
+            "reconsilation",
+            "reconciliation",
+            "reconcilation",
+        )
+    )
 
 
 class UploadedSheetService:
@@ -95,6 +114,13 @@ class UploadedSheetService:
         try:
             for index, sheet_info in enumerate(sheets_data):
                 sheet_name: str = sheet_info["name"]
+                if _should_skip_sheet(sheet_name):
+                    logger.info(
+                        "Skipping reconciliation/result sheet '%s' for uploaded_file_id=%s.",
+                        sheet_name,
+                        uploaded_file_id,
+                    )
+                    continue
 
                 df = FileReaderService.read_sheet_as_dataframe(
                     path,
@@ -123,6 +149,11 @@ class UploadedSheetService:
                     total_columns=total_columns,
                 )
                 created_sheets.append(sheet_record)
+
+            if not created_sheets:
+                raise ValueError(
+                    f"The workbook '{path.name}' contains no processable sheets."
+                )
 
             # Commit every flush in one atomic transaction
             self._db.commit()

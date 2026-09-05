@@ -41,6 +41,8 @@ router = APIRouter(prefix="/files", tags=["Reconciliation"])
 class CombinedReconciliationRequest(BaseModel):
     uploaded_file_ids: list[int] = Field(..., min_length=1)
     result_uploaded_file_id: int | None = None
+    selected_sheet_ids: list[int] | None = None
+    sheet_role_map: dict[int, str] | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -82,6 +84,8 @@ def run_combined_reconciliation(
         total_rows = svc.reconcile_combined(
             uploaded_file_ids=body.uploaded_file_ids,
             result_uploaded_file_id=result_file_id,
+            selected_sheet_ids=body.selected_sheet_ids,
+            sheet_role_map=body.sheet_role_map,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
@@ -97,6 +101,8 @@ def run_combined_reconciliation(
 
     return {
         "uploaded_file_ids": body.uploaded_file_ids,
+        "selected_sheet_ids": body.selected_sheet_ids,
+        "sheet_role_map": body.sheet_role_map,
         "result_uploaded_file_id": result_file_id,
         "status": "completed",
         "reconciled_rows": total_rows,

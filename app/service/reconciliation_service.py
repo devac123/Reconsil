@@ -44,6 +44,7 @@ For a given uploaded file the engine:
 import logging
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+from difflib import SequenceMatcher
 import re
 
 from sqlalchemy import insert, text
@@ -68,12 +69,196 @@ _SHEET_CASHX_RE   = "cash x re"
 _SHEET_SPYJ_SALE  = "spyj sale"
 _SHEET_SPJY_REF   = "spjy refund"
 
+_SHEET_IGNORE = "ignore"
+_SHEET_ROLE_KEYS = {
+    _SHEET_AIR_COST,
+    _SHEET_CASHX_SALE,
+    _SHEET_CASHX_RE,
+    _SHEET_SPYJ_SALE,
+    _SHEET_SPJY_REF,
+}
+
+_SHEET_MATCH_THRESHOLD = 0.80
+
 # ---------------------------------------------------------------------------
 # Remark assignment thresholds
 # ---------------------------------------------------------------------------
 _MARKUP_VALUE   = 300.0
 _MARKUP_TOL     = 10.0   # ±10 around 300 → "Markup/Booking Charges"
 _MATCH_TOL      = 1.0    # |variance| < 1 → "Matched"
+
+_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "cost_pnr": ("RecordLocator", "Record Locator", "PNR", "GDS PNR"),
+    "cost_amount": ("PaymentAmount", "Payment Amount", "Amount", "Total Amount"),
+    "cost_debit_credit": ("Debit or Credit", "Debit/Credit", "Dr Cr", "DR/CR"),
+    "booking_date": ("BookingDate", "Booking Date", "booking_date"),
+    "booking_id": (
+        "Booking ID",
+        "BookingID",
+        "Booking Id",
+        "BOOKING ID",
+        "BOOKINGID",
+        "booking_id",
+        "Booking Number",
+        "BookingNumber",
+        "RecordLocator",
+        "GDS_recordlocator",
+    ),
+    "customer_name": (
+        "Name1",
+        "name1",
+        "Client Name",
+        "CLIENT NAME",
+        "Customer Name",
+        "CUSTOMER NAME",
+        "Passenger Name",
+        "PASSENGER NAME",
+        "Pax Name",
+        "PAX NAME",
+        "PAX",
+        "Name",
+        "NAME",
+    ),
+    "client_name": (
+        "Client Name",
+        "CLIENT NAME",
+        "Customer Name",
+        "CUSTOMER NAME",
+        "Passenger Name",
+        "PASSENGER NAME",
+        "Pax Name",
+        "PAX NAME",
+        "PAX",
+        "Name",
+        "NAME",
+        "Name1",
+        "name1",
+    ),
+    "client_code": ("Client Code", "CLIENT CODE", "Customer Code", "CUSTOMER CODE"),
+    "cashx_sale_pnr": ("Formatted PNR", "PNR", "GDS PNR", "RecordLocator"),
+    "cashx_refund_pnr": ("PNR formatted", "Formatted PNR", "PNR", "GDS PNR", "RecordLocator"),
+    "gross_fare": ("GROSS FARE", "Gross Fare", "GrossFare", "Amount", "Total Amount"),
+    "ticket_number": ("TKT NO", "Ticket No", "Ticket Number", "TicketNumbers", "Ticket Numbers"),
+    "spyj_pnr": ("GDS PNR", "PNR", "Formatted PNR", "RecordLocator"),
+    "spyj_sale_amount": ("Total Amount", "Amount", "GROSS FARE", "Gross Fare"),
+    "spyj_refund_amount": ("Total Refund Amount", "Refund Amount", "Total Amount", "Amount"),
+}
+
+
+def _normalise_name(value: str | None) -> str:
+    """Strip spaces, lowercase, and remove symbols for flexible matching."""
+    return re.sub(r"[^a-z0-9]", "", (value or "").strip().lower())
+
+
+def _should_skip_sheet(sheet_name: str) -> bool:
+    normalised = _normalise_name(sheet_name)
+    return any(
+        marker in normalised
+        for marker in (
+            "recon",
+            "reconsil",
+            "reconsilation",
+            "reconciliation",
+            "reconcilation",
+        )
+    )
+
+
+def _match_score(left: str, right: str) -> float:
+    left_key = _normalise_name(left)
+    right_key = _normalise_name(right)
+    if not left_key or not right_key:
+        return 0.0
+    if left_key == right_key:
+        return 1.0
+    return SequenceMatcher(None, left_key, right_key).ratio()
+
+
+def _sheet_tokens(sheet_name: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", sheet_name.lower()))
+
+
+def _sheet_token_key(sheet_name: str) -> str:
+    return _normalise_name(sheet_name)
+
+
+def _canonical_sheet_name(sheet_name: str, context_name: str | None = None) -> str:
+    """Map similar sheet names to the logical reconciliation sheet key."""
+    tokens = _sheet_tokens(sheet_name)
+    context_tokens = _sheet_tokens(context_name or "")
+    all_tokens = tokens | context_tokens
+    token_key = _sheet_token_key(sheet_name)
+    context_key = _sheet_token_key(context_name or "")
+    all_key = token_key + context_key
+
+    if "cashx" in all_key or {"cash", "x"}.issubset(all_tokens):
+        if tokens & {"refund", "ref", "re"}:
+            return _SHEET_CASHX_RE
+        if tokens & {"sale", "sales"}:
+            return _SHEET_CASHX_SALE
+        if context_tokens & {"refund", "ref", "re"}:
+            return _SHEET_CASHX_RE
+        if context_tokens & {"sale", "sales"}:
+            return _SHEET_CASHX_SALE
+
+    if tokens & {"spyj", "spjy"} or context_tokens & {"spyj", "spjy"} or "online" in all_tokens:
+        if tokens & {"refund", "fund", "ref"}:
+            return _SHEET_SPJY_REF
+        if tokens & {"sale", "sales"}:
+            return _SHEET_SPYJ_SALE
+        if context_tokens & {"refund", "fund", "ref"} and not (context_tokens & {"sale", "sales"}):
+            return _SHEET_SPJY_REF
+        if context_tokens & {"sale", "sales"} and not (context_tokens & {"refund", "fund", "ref"}):
+            return _SHEET_SPYJ_SALE
+
+    if "cost" in all_key and not (tokens & {"recon", "reconciliation", "reconcilation"}):
+        return _SHEET_AIR_COST
+
+    best_name = sheet_name.strip().lower()
+    best_score = 0.0
+    for known_name in (
+        _SHEET_AIR_COST,
+        _SHEET_CASHX_SALE,
+        _SHEET_CASHX_RE,
+        _SHEET_SPYJ_SALE,
+        _SHEET_SPJY_REF,
+    ):
+        score = _match_score(sheet_name, known_name)
+        if score > best_score:
+            best_name = known_name
+            best_score = score
+    return best_name if best_score >= _SHEET_MATCH_THRESHOLD else sheet_name.strip().lower()
+
+
+def _normalise_sheet_role(role: str | None) -> str:
+    role_key = (role or "").strip().lower()
+    if not role_key or role_key == _SHEET_IGNORE:
+        return _SHEET_IGNORE
+    if role_key not in _SHEET_ROLE_KEYS:
+        raise ValueError(
+            "Invalid sheet role. Allowed roles are: "
+            f"{sorted(_SHEET_ROLE_KEYS | {_SHEET_IGNORE})}"
+        )
+    return role_key
+
+
+def _field_value(raw: dict, field_name: str):
+    """Read a value using exact, normalised, then alias matching."""
+    aliases = _FIELD_ALIASES.get(field_name, (field_name,))
+    for key in aliases:
+        value = raw.get(key)
+        if _clean_text(value) is not None:
+            return value
+
+    raw_key_map = {_normalise_name(str(key)): key for key in raw.keys()}
+    for alias in aliases:
+        key = raw_key_map.get(_normalise_name(alias))
+        if key is None:
+            continue
+        value = raw.get(key)
+        if _clean_text(value) is not None:
+            return value
+    return None
 
 
 def _safe_float(value) -> float:
@@ -133,7 +318,7 @@ def _clean_text(value) -> str | None:
 def _first_text(raw: dict, *keys: str) -> str | None:
     """Return the first non-empty text value for any matching raw-data key."""
     for key in keys:
-        value = _clean_text(raw.get(key))
+        value = _clean_text(_field_value(raw, key))
         if value:
             return value
     return None
@@ -141,52 +326,17 @@ def _first_text(raw: dict, *keys: str) -> str | None:
 
 def _extract_client_name(raw: dict) -> str | None:
     """Resolve client/passenger name from common CASH X and SPYJ headers."""
-    return _first_text(
-        raw,
-        "Client Name",
-        "CLIENT NAME",
-        "client_name",
-        "Customer Name",
-        "CUSTOMER NAME",
-        "Passenger Name",
-        "PASSENGER NAME",
-        "Pax Name",
-        "PAX NAME",
-        "PAX",
-        "Name",
-        "NAME",
-        "Name1",
-        "name1",
-    )
+    return _clean_text(_field_value(raw, "client_name"))
 
 
 def _extract_client_code(raw: dict) -> str | None:
     """Resolve client code from common CASH X and SPYJ headers."""
-    return _first_text(
-        raw,
-        "Client Code",
-        "CLIENT CODE",
-        "client_code",
-        "Customer Code",
-        "CUSTOMER CODE",
-    )
+    return _clean_text(_field_value(raw, "client_code"))
 
 
 def _extract_booking_id(raw: dict) -> str | None:
     """Resolve booking ID from common AIR COST TRN headers."""
-    return _first_text(
-        raw,
-        "Booking ID",
-        "BookingID",
-        "Booking Id",
-        "BOOKING ID",
-        "BOOKINGID",
-        "booking_id",
-        "Booking Number",
-        "BookingNumber",
-        "RecordLocator",
-        "GDS_recordlocator",
-    )
+    return _clean_text(_field_value(raw, "booking_id"))
 
 
 def _normalize_ticket_number(value) -> str | None:
@@ -274,6 +424,8 @@ class ReconciliationService:
         self,
         uploaded_file_ids: list[int],
         result_uploaded_file_id: int | None = None,
+        selected_sheet_ids: list[int] | None = None,
+        sheet_role_map: dict[int, str] | None = None,
     ) -> int:
         """
         Run reconciliation across one or more uploaded workbooks.
@@ -290,6 +442,28 @@ class ReconciliationService:
         if result_file_id not in uploaded_file_ids:
             uploaded_file_ids.insert(0, result_file_id)
 
+        selected_sheet_ids = (
+            list(dict.fromkeys(selected_sheet_ids))
+            if selected_sheet_ids is not None
+            else None
+        )
+        if selected_sheet_ids is not None and not selected_sheet_ids:
+            raise ValueError("At least one selected_sheet_id is required.")
+
+        normalised_role_map: dict[int, str] | None = None
+        if sheet_role_map is not None:
+            normalised_role_map = {
+                int(sheet_id): _normalise_sheet_role(role)
+                for sheet_id, role in sheet_role_map.items()
+            }
+            selected_sheet_ids = [
+                sheet_id
+                for sheet_id, role in normalised_role_map.items()
+                if role != _SHEET_IGNORE
+            ]
+            if not selected_sheet_ids:
+                raise ValueError("Map at least one sheet before reconciliation.")
+
         existing_ids = {
             file_id
             for (file_id,) in (
@@ -303,9 +477,12 @@ class ReconciliationService:
             raise ValueError(f"Uploaded file id(s) not found: {missing_ids}")
 
         logger.info(
-            "Starting combined reconciliation for uploaded_file_ids=%s; result_file_id=%s.",
+            "Starting combined reconciliation for uploaded_file_ids=%s; "
+            "result_file_id=%s; selected_sheet_ids=%s; sheet_role_map=%s.",
             uploaded_file_ids,
             result_file_id,
+            selected_sheet_ids,
+            normalised_role_map,
         )
 
         # Remove stale results from a previous run (if any)
@@ -318,7 +495,11 @@ class ReconciliationService:
         )
 
         # Load sheet-id map: normalised_sheet_name → list[sheet_id]
-        sheet_map = self._load_sheet_map(uploaded_file_ids)
+        sheet_map = self._load_sheet_map(
+            uploaded_file_ids,
+            selected_sheet_ids,
+            normalised_role_map,
+        )
         logger.info("Sheet map: %s", {k: v for k, v in sheet_map.items()})
 
         # Build aggregates per data source
@@ -449,19 +630,70 @@ class ReconciliationService:
     # Sheet loading helpers                                                #
     # ------------------------------------------------------------------ #
 
-    def _load_sheet_map(self, uploaded_file_ids: list[int]) -> dict[str, list[int]]:
+    def _load_sheet_map(
+        self,
+        uploaded_file_ids: list[int],
+        selected_sheet_ids: list[int] | None = None,
+        sheet_role_map: dict[int, str] | None = None,
+    ) -> dict[str, list[int]]:
         """
         Return normalised_sheet_name → sheet_id list for uploaded workbooks.
         """
-        sheets = (
-            self._db.query(UploadedSheet)
-            .filter(UploadedSheet.uploaded_file_id.in_(uploaded_file_ids))
-            .order_by(UploadedSheet.uploaded_file_id, UploadedSheet.sheet_index)
-            .all()
+        filter_sheet_ids = (
+            list(sheet_role_map.keys())
+            if sheet_role_map is not None
+            else selected_sheet_ids
         )
+        query = self._db.query(UploadedSheet).filter(
+            UploadedSheet.uploaded_file_id.in_(uploaded_file_ids)
+        )
+        if filter_sheet_ids is not None:
+            query = query.filter(UploadedSheet.id.in_(filter_sheet_ids))
+
+        sheets = query.order_by(
+            UploadedSheet.uploaded_file_id,
+            UploadedSheet.sheet_index,
+        ).all()
+
+        if filter_sheet_ids is not None:
+            found_sheet_ids = {sheet.id for sheet in sheets}
+            missing_sheet_ids = [
+                sheet_id
+                for sheet_id in filter_sheet_ids
+                if sheet_id not in found_sheet_ids
+            ]
+            if missing_sheet_ids:
+                raise ValueError(
+                    "Selected sheet id(s) not found for uploaded files: "
+                    f"{missing_sheet_ids}"
+                )
+
+        if not sheets:
+            raise ValueError("No sheets are available for reconciliation.")
+
         sheet_map: dict[str, list[int]] = defaultdict(list)
         for sheet in sheets:
-            sheet_map[sheet.sheet_name.strip().lower()].append(sheet.id)
+            mapped_role = sheet_role_map.get(sheet.id) if sheet_role_map else None
+            if mapped_role == _SHEET_IGNORE:
+                logger.info("Ignoring sheet '%s' by user mapping.", sheet.sheet_name)
+                continue
+            if mapped_role:
+                sheet_map[mapped_role].append(sheet.id)
+                continue
+            if _should_skip_sheet(sheet.sheet_name):
+                logger.info("Skipping reconciliation/result sheet '%s'.", sheet.sheet_name)
+                continue
+            context_name = ""
+            if sheet.uploaded_file:
+                context_name = " ".join(
+                    str(value or "")
+                    for value in (
+                        sheet.uploaded_file.original_filename,
+                        sheet.uploaded_file.stored_filename,
+                        sheet.uploaded_file.file_path,
+                    )
+                )
+            sheet_map[_canonical_sheet_name(sheet.sheet_name, context_name)].append(sheet.id)
         return dict(sheet_map)
 
     def _iter_rows(self, sheet_ids: list[int] | None):
@@ -515,12 +747,12 @@ class ReconciliationService:
         )
 
         for raw in self._iter_rows(sheet_ids):
-            pnr = str(raw.get("RecordLocator") or "").strip()
+            pnr = str(_field_value(raw, "cost_pnr") or "").strip()
             if not pnr or pnr.lower() in ("nan", "none", ""):
                 continue
 
-            amount = _safe_float(raw.get("PaymentAmount"))
-            dc = str(raw.get("Debit or Credit") or "").strip().lower()
+            amount = _safe_float(_field_value(raw, "cost_amount"))
+            dc = str(_field_value(raw, "cost_debit_credit") or "").strip().lower()
 
             if dc == "debit":
                 agg[pnr]["sale"] += amount
@@ -529,7 +761,7 @@ class ReconciliationService:
 
             # Capture BookingDate (first non-null value wins)
             if agg[pnr]["booking_date"] is None:
-                raw_date = raw.get("BookingDate") or raw.get("Booking Date") or raw.get("booking_date")
+                raw_date = _field_value(raw, "booking_date")
                 booking_date = _safe_date(raw_date)
                 if booking_date:
                     agg[pnr]["booking_date"] = booking_date
@@ -542,8 +774,7 @@ class ReconciliationService:
 
             # Capture customer/passenger name from Name1 (first non-null wins)
             if agg[pnr]["customer_name"] is None:
-                name = raw.get("Name1") or raw.get("name1")
-                name = _clean_text(name)
+                name = _clean_text(_field_value(raw, "customer_name"))
                 if name:
                     agg[pnr]["customer_name"] = name
 
@@ -568,17 +799,17 @@ class ReconciliationService:
           CASH X Re    → "PNR formatted"
         """
         sheet_ids = sheet_map.get(sheet_key)
-        pnr_col = "Formatted PNR" if sheet_key == _SHEET_CASHX_SALE else "PNR formatted"
+        pnr_field = "cashx_sale_pnr" if sheet_key == _SHEET_CASHX_SALE else "cashx_refund_pnr"
 
         agg: dict[str, dict] = defaultdict(
             lambda: {"amount": 0.0, "client_name": None, "client_code": None}
         )
 
         for raw in self._iter_rows(sheet_ids):
-            pnr = str(raw.get(pnr_col) or "").strip()
+            pnr = str(_field_value(raw, pnr_field) or "").strip()
             if not pnr or pnr.lower() in ("nan", "none", ""):
                 continue
-            agg[pnr]["amount"] += _safe_float(raw.get("GROSS FARE"))
+            agg[pnr]["amount"] += _safe_float(_field_value(raw, "gross_fare"))
             if agg[pnr]["client_name"] is None:
                 agg[pnr]["client_name"] = _extract_client_name(raw)
             if agg[pnr]["client_code"] is None:
@@ -601,13 +832,13 @@ class ReconciliationService:
         for sheet_key in (_SHEET_CASHX_SALE, _SHEET_CASHX_RE):
             sheet_ids = sheet_map.get(sheet_key)
             for raw in self._iter_rows(sheet_ids):
-                ticket = _normalize_ticket_number(raw.get("TKT NO"))
+                ticket = _normalize_ticket_number(_field_value(raw, "ticket_number"))
                 if not ticket or ticket in result:
                     continue
                 client_name = _extract_client_name(raw)
                 client_code = _extract_client_code(raw)
                 if client_name or client_code:
-                    for key in _ticket_lookup_keys(raw.get("TKT NO")):
+                    for key in _ticket_lookup_keys(_field_value(raw, "ticket_number")):
                         result.setdefault(
                             key,
                             {"client_name": client_name, "client_code": client_code},
@@ -629,16 +860,16 @@ class ReconciliationService:
         client_lookup = cashx_client_by_ticket or {}
 
         for raw in self._iter_rows(sheet_ids):
-            pnr = str(raw.get("GDS PNR") or "").strip()
+            pnr = str(_field_value(raw, "spyj_pnr") or "").strip()
             if not pnr or pnr.lower() in ("nan", "none", ""):
                 continue
-            agg[pnr]["amount"] += _safe_float(raw.get("Total Amount"))
+            agg[pnr]["amount"] += _safe_float(_field_value(raw, "spyj_sale_amount"))
             if agg[pnr]["client_name"] is None:
                 agg[pnr]["client_name"] = _extract_client_name(raw)
             if agg[pnr]["client_code"] is None:
                 agg[pnr]["client_code"] = _extract_client_code(raw)
             if agg[pnr]["client_name"] is None or agg[pnr]["client_code"] is None:
-                for ticket in _ticket_lookup_keys(raw.get("Ticket No") or raw.get("Ticket Number")):
+                for ticket in _ticket_lookup_keys(_field_value(raw, "ticket_number")):
                     client = client_lookup.get(ticket)
                     if not client:
                         continue
@@ -671,16 +902,16 @@ class ReconciliationService:
         client_lookup = cashx_client_by_ticket or {}
 
         for raw in self._iter_rows(sheet_ids):
-            pnr = str(raw.get("GDS PNR") or "").strip()
+            pnr = str(_field_value(raw, "spyj_pnr") or "").strip()
             if not pnr or pnr.lower() in ("nan", "none", ""):
                 continue
-            agg[pnr]["amount"] += _safe_float(raw.get("Total Refund Amount"))
+            agg[pnr]["amount"] += _safe_float(_field_value(raw, "spyj_refund_amount"))
             if agg[pnr]["client_name"] is None:
                 agg[pnr]["client_name"] = _extract_client_name(raw)
             if agg[pnr]["client_code"] is None:
                 agg[pnr]["client_code"] = _extract_client_code(raw)
             if agg[pnr]["client_name"] is None or agg[pnr]["client_code"] is None:
-                for ticket in _ticket_lookup_keys(raw.get("TicketNumbers")):
+                for ticket in _ticket_lookup_keys(_field_value(raw, "ticket_number")):
                     client = client_lookup.get(ticket)
                     if not client:
                         continue

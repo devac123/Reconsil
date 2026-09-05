@@ -1,0 +1,22 @@
+---
+description: Cost-vs-Revenue formula, sheets, and remark labels
+globs: app/service/reconciliation_service.py,app/service/staging_record_service.py,app/service/uploaded_sheet_service.py,app/routes/api/reconciliation_routes.py
+alwaysApply: false
+---
+
+# Reconciliation domain
+
+Five source sheets (fuzzy-matched, skip Reconcilation/Queries): AIR COST TRN, CASH x SAle, CASH X Re, SPYJ SALE, SPJY Refund.
+
+```
+variance = cost_net - cashx_net - spyj_net
+cost_net  = AIR COST TRN debit - credit
+cashx_net = CASH x SAle - CASH X Re
+spyj_net  = SPYJ SALE - SPJY Refund
+```
+
+Remarks: `|variance| < 1` → Matched; `| |variance| - 300 | <= 10` → Markup/Booking Charges; missing source → Not in Cost / Not in CASH X / Not in SPYJ (all missing labels kept); else Variance.
+
+Store one `ReconciliationResult` per PNR and one `ReconciliationRemark` row per label. `remark` on the result is a comma-joined display cache.
+
+Single-file: `POST /files/{id}/reconcile`. Multi-file: `reconcile_combined()` / `POST /files/reconcile-combined`. Keep column aliases in `_FIELD_ALIASES`; do not invent a mapping table unless asked.

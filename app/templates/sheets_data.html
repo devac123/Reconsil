@@ -316,6 +316,25 @@
     <div id="sheet-panel-reconciliation"
          class="sheet-panel flex flex-col gap-md">
 
+      {% if uploaded_file_ids | length > 1 %}
+      <div class="bg-surface border border-outline-variant rounded-lg overflow-hidden">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-sm px-md py-sm border-b border-outline-variant">
+          <div>
+            <p class="font-label-md text-label-md text-on-surface">Map Sheets for Merge</p>
+            <p id="sheet-map-summary" class="font-body-sm text-body-sm text-outline text-[12px]">
+              Map each uploaded sheet to the reconciliation type it should merge into.
+            </p>
+          </div>
+          <button type="button"
+                  onclick="autoMapReconciliationSheets()"
+                  class="border border-outline-variant text-on-surface font-label-md text-label-md px-md h-[32px] rounded hover:bg-surface-container transition-colors">
+            Auto Map
+          </button>
+        </div>
+        <div id="sheet-map-list" class="max-h-[320px] overflow-y-auto divide-y divide-outline-variant"></div>
+      </div>
+      {% endif %}
+
       <!-- Toolbar -->
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-sm
                   bg-surface border border-outline-variant rounded-lg px-md py-sm">
@@ -506,6 +525,15 @@
 <script>
   const FILE_ID = {{ uploaded_file.id }};
   const UPLOADED_FILE_IDS = {{ uploaded_file_ids | tojson }};
+  const SOURCE_SHEET_MAPPINGS = {{ source_sheet_mappings | tojson }};
+  const SHEET_ROLES = [
+    { value: 'air cost trn', label: 'AIR COST TRN' },
+    { value: 'cash x sale', label: 'CASH X Sale' },
+    { value: 'cash x re', label: 'CASH X Refund' },
+    { value: 'spyj sale', label: 'SPYJ Sale' },
+    { value: 'spjy refund', label: 'SPYJ Refund' },
+    { value: 'ignore', label: 'Ignore' },
+  ];
 
   async function readResponseBody(resp) {
     const contentType = resp.headers.get('content-type') || '';
@@ -538,7 +566,9 @@
   // ── Filters ────────────────────────────────────────────────────────────────
   function getActiveSheetId() {
     const active = document.querySelector('.sheet-panel.active');
-    return active ? parseInt(active.id.replace('sheet-panel-', '')) : null;
+    if (!active || active.id === 'sheet-panel-reconciliation') return null;
+    const sheetId = parseInt(active.id.replace('sheet-panel-', ''), 10);
+    return Number.isNaN(sheetId) ? null : sheetId;
   }
 
   function applyFilters() {
@@ -643,6 +673,8 @@
 
   // ── Tab switching ──────────────────────────────────────────────────────────
   function switchSheet(sheetId) {
+    if (!state[sheetId]) return;
+
     // Hide all panels
     document.querySelectorAll('.sheet-panel').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.sheet-tab-btn').forEach(b => {
@@ -651,8 +683,10 @@
     });
 
     // Show target panel
-    document.getElementById('sheet-panel-' + sheetId).classList.add('active');
+    const panel = document.getElementById('sheet-panel-' + sheetId);
     const btn = document.getElementById('tab-btn-' + sheetId);
+    if (!panel || !btn) return;
+    panel.classList.add('active');
     btn.classList.add('bg-surface-container-lowest', 'text-primary', 'border-outline-variant');
     btn.classList.remove('bg-surface-container', 'border-transparent', 'text-on-surface-variant');
 
@@ -681,6 +715,7 @@
   async function loadSheetData(sheetId) {
     const s     = state[sheetId];
     const tbody = document.getElementById('tbody-' + sheetId);
+    if (!s || !tbody) return;
 
     tbody.innerHTML = `
       <tr>
@@ -799,12 +834,107 @@
       .replace(/"/g, '&quot;');
   }
 
+  function normaliseName(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  function inferSheetRole(sheetName, fileName = '', suggestedRole = '') {
+    const allowedRoles = new Set(SHEET_ROLES.map(role => role.value));
+    if (allowedRoles.has(suggestedRole)) return suggestedRole;
+
+    const text = normaliseName(sheetName + ' ' + fileName);
+    const tokens = new Set(text.split(/\s+/).filter(Boolean));
+    const compact = text.replace(/\s+/g, '');
+
+    if (compact.includes('recon')) return 'ignore';
+    if (compact.includes('cashx') || (tokens.has('cash') && tokens.has('x'))) {
+      if (tokens.has('refund') || tokens.has('ref') || tokens.has('re')) return 'cash x re';
+      if (tokens.has('sale') || tokens.has('sales')) return 'cash x sale';
+    }
+    if (tokens.has('spyj') || tokens.has('spjy') || tokens.has('online')) {
+      if (tokens.has('refund') || tokens.has('fund') || tokens.has('ref')) return 'spjy refund';
+      if (tokens.has('sale') || tokens.has('sales')) return 'spyj sale';
+    }
+    if (tokens.has('cost') || compact.includes('cost')) return 'air cost trn';
+    return 'ignore';
+  }
+
+  function buildRoleOptions(selectedRole) {
+    return SHEET_ROLES.map(role => `
+      <option value="${role.value}" ${role.value === selectedRole ? 'selected' : ''}>
+        ${role.label}
+      </option>
+    `).join('');
+  }
+
+  function getSheetRoleMap() {
+    const roleMap = {};
+    document.querySelectorAll('.recon-sheet-role').forEach(select => {
+      roleMap[select.dataset.sheetId] = select.value;
+    });
+    return roleMap;
+  }
+
+  function getMappedSheetIds() {
+    return Object.entries(getSheetRoleMap())
+      .filter(([, role]) => role !== 'ignore')
+      .map(([sheetId]) => parseInt(sheetId, 10))
+      .filter(Number.isFinite);
+  }
+
+  function updateSheetMapSummary() {
+    const summary = document.getElementById('sheet-map-summary');
+    if (!summary) return;
+    const total = document.querySelectorAll('.recon-sheet-role').length;
+    const mapped = getMappedSheetIds().length;
+    summary.textContent = mapped + ' mapped, ' + (total - mapped) + ' ignored';
+  }
+
+  function renderReconciliationSheetMap() {
+    const list = document.getElementById('sheet-map-list');
+    if (!list || UPLOADED_FILE_IDS.length < 2) return;
+
+    list.innerHTML = SOURCE_SHEET_MAPPINGS.map(sheet => {
+      const selectedRole = inferSheetRole(sheet.sheet_name, sheet.filename, sheet.suggested_role);
+      return `
+        <div class="grid grid-cols-[minmax(0,1fr)_190px_auto] items-center gap-md px-md py-sm hover:bg-surface-container">
+          <div class="min-w-0">
+            <p class="font-body-sm text-body-sm text-on-surface truncate">${escapeHtml(sheet.sheet_name)}</p>
+            <p class="font-body-sm text-body-sm text-outline text-[11px] truncate">${escapeHtml(sheet.filename)}</p>
+          </div>
+          <select class="recon-sheet-role border border-outline-variant rounded px-sm h-[34px] bg-surface text-on-surface font-body-sm text-body-sm"
+                  data-sheet-id="${sheet.id}">
+            ${buildRoleOptions(selectedRole)}
+          </select>
+          <span class="font-data-mono text-data-mono text-outline text-[11px] whitespace-nowrap">
+            ${(sheet.total_rows || 0).toLocaleString()} rows
+          </span>
+        </div>
+      `;
+    }).join('');
+
+    list.querySelectorAll('.recon-sheet-role').forEach(select => {
+      select.addEventListener('change', updateSheetMapSummary);
+    });
+    updateSheetMapSummary();
+  }
+
+  function autoMapReconciliationSheets() {
+    document.querySelectorAll('.recon-sheet-role').forEach(select => {
+      const sheet = SOURCE_SHEET_MAPPINGS.find(item => String(item.id) === select.dataset.sheetId);
+      if (!sheet) return;
+      select.value = inferSheetRole(sheet.sheet_name, sheet.filename, sheet.suggested_role);
+    });
+    updateSheetMapSummary();
+  }
+
   // ── Auto-load first sheet on page load ────────────────────────────────────
   window.addEventListener('DOMContentLoaded', () => {
     {% if sheets %}
     const firstSheetId = {{ sheets[0].id }};
     loadSheetData(firstSheetId);
     {% endif %}
+    renderReconciliationSheetMap();
   });
 
   // ── Reconciliation Tab ─────────────────────────────────────────────────────
@@ -835,6 +965,11 @@
 
     try {
       const isBatchRun = UPLOADED_FILE_IDS.length > 1;
+      const sheetRoleMap = getSheetRoleMap();
+      const selectedSheetIds = getMappedSheetIds();
+      if (isBatchRun && !selectedSheetIds.length) {
+        throw new Error('Please map at least one sheet before reconciliation.');
+      }
       const resp = isBatchRun
         ? await fetch('/files/reconcile-combined', {
             method: 'POST',
@@ -842,6 +977,8 @@
             body: JSON.stringify({
               uploaded_file_ids: UPLOADED_FILE_IDS,
               result_uploaded_file_id: FILE_ID,
+              selected_sheet_ids: selectedSheetIds,
+              sheet_role_map: sheetRoleMap,
             }),
           })
         : await fetch(`/files/${FILE_ID}/reconcile`, { method: 'POST' });

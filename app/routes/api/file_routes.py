@@ -192,6 +192,16 @@ def _ingest_saved_file(
         "filename": filename,
         "total_sheets": len(sheets),
         "total_rows_imported": total_rows,
+        "sheets": [
+            {
+                "id": sheet.id,
+                "name": sheet.sheet_name,
+                "index": sheet.sheet_index,
+                "total_rows": sheet.total_rows,
+                "total_columns": sheet.total_columns,
+            }
+            for sheet in sheets
+        ],
         "status": "Imported Successfully",
     }
 

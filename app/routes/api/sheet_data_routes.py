@@ -33,10 +33,19 @@ from app.database.session import get_db
 from app.models.staging_record import StagingRecord
 from app.models.uploaded_file import UploadedFile
 from app.models.uploaded_sheet import UploadedSheet
+from app.service.reconciliation_service import _canonical_sheet_name, _should_skip_sheet
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/files", tags=["Sheet Data"])
+
+_SHEET_LABELS = {
+    "air cost trn": "Air Cost TRN",
+    "cash x sale": "Cash X Sale",
+    "cash x re": "Cash X Refund",
+    "spyj sale": "SPYJ Sale",
+    "spjy refund": "SPYJ Refund",
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -67,6 +76,28 @@ def _batch_file_ids(uploaded_file: UploadedFile, db: Session) -> list[int]:
     return [row[0] for row in rows]
 
 
+def _sheet_context(sheet: UploadedSheet) -> str:
+    uploaded_file = sheet.uploaded_file
+    if not uploaded_file:
+        return ""
+    return " ".join(
+        str(value or "")
+        for value in (
+            uploaded_file.original_filename,
+            uploaded_file.stored_filename,
+            uploaded_file.file_path,
+        )
+    )
+
+
+def _sheet_group_key(sheet: UploadedSheet) -> str:
+    return _canonical_sheet_name(sheet.sheet_name, _sheet_context(sheet))
+
+
+def _sheet_display_name(group_key: str, fallback: str) -> str:
+    return _SHEET_LABELS.get(group_key, fallback)
+
+
 def _sheet_group_ids(
     uploaded_file: UploadedFile,
     sheet_id: int,
@@ -88,17 +119,18 @@ def _sheet_group_ids(
             detail=f"Sheet id={sheet_id} not found for file id={uploaded_file.id}.",
         )
 
+    group_key = _sheet_group_key(sheet)
+    batch_sheets = (
+        db.query(UploadedSheet)
+        .options(joinedload(UploadedSheet.uploaded_file))
+        .filter(UploadedSheet.uploaded_file_id.in_(file_ids))
+        .order_by(UploadedSheet.uploaded_file_id, UploadedSheet.sheet_index)
+        .all()
+    )
     grouped_sheet_ids = [
-        row[0]
-        for row in (
-            db.query(UploadedSheet.id)
-            .filter(
-                UploadedSheet.uploaded_file_id.in_(file_ids),
-                UploadedSheet.sheet_name == sheet.sheet_name,
-            )
-            .order_by(UploadedSheet.uploaded_file_id, UploadedSheet.sheet_index)
-            .all()
-        )
+        item.id
+        for item in batch_sheets
+        if not _should_skip_sheet(item.sheet_name) and _sheet_group_key(item) == group_key
     ]
     return sheet, grouped_sheet_ids
 
@@ -109,13 +141,18 @@ def _sheet_payload(
     total: int,
     page: int,
     page_size: int,
+    sheet_name: str | None = None,
 ) -> dict:
     """Build the per-sheet dict returned in responses."""
-    raw_columns = list(records[0].raw_data.keys()) if records else []
+    raw_columns = []
+    for record in records:
+        for column in record.raw_data.keys():
+            if column not in raw_columns:
+                raw_columns.append(column)
     columns = ["File Name", *raw_columns]
     return {
         "sheet_id":    sheet.id,
-        "sheet_name":  sheet.sheet_name,
+        "sheet_name":  sheet_name or sheet.sheet_name,
         "sheet_index": sheet.sheet_index,
         "total_rows":  total,
         "page":        page,
@@ -251,9 +288,11 @@ def get_all_sheets_data(
     grouped: dict[str, list[UploadedSheet]] = {}
 
     for sheet in sheets:
-        grouped.setdefault(sheet.sheet_name, []).append(sheet)
+        if _should_skip_sheet(sheet.sheet_name):
+            continue
+        grouped.setdefault(_sheet_group_key(sheet), []).append(sheet)
 
-    for sheet_group in grouped.values():
+    for group_key, sheet_group in grouped.items():
         sheet = sheet_group[0]
         sheet_ids = [item.id for item in sheet_group]
         base_q = db.query(StagingRecord).filter(
@@ -272,7 +311,16 @@ def get_all_sheets_data(
             .limit(page_size)
             .all()
         )
-        result.append(_sheet_payload(sheet, records, total, page, page_size))
+        result.append(
+            _sheet_payload(
+                sheet,
+                records,
+                total,
+                page,
+                page_size,
+                sheet_name=_sheet_display_name(group_key, sheet.sheet_name),
+            )
+        )
 
     return {
         "uploaded_file_id": uploaded_file_id,
@@ -353,5 +401,12 @@ def get_single_sheet_data(
             "date_to":       str(date_to)   if date_to   else None,
             "is_processed":  is_processed,
         },
-        **_sheet_payload(sheet, records, total, page, page_size),
+        **_sheet_payload(
+            sheet,
+            records,
+            total,
+            page,
+            page_size,
+            sheet_name=_sheet_display_name(_sheet_group_key(sheet), sheet.sheet_name),
+        ),
     }

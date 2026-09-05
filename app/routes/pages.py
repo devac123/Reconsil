@@ -37,11 +37,20 @@ from app.models.staging_record import StagingRecord
 from app.models.upload_batch import UploadBatch
 from app.models.uploaded_file import UploadedFile, UploadStatus
 from app.models.uploaded_sheet import UploadedSheet
+from app.service.reconciliation_service import _canonical_sheet_name, _should_skip_sheet
 
 logger = logging.getLogger(__name__)
 
 router    = APIRouter(tags=["Pages"])
 templates = Jinja2Templates(directory="app/templates")
+
+_SHEET_LABELS = {
+    "air cost trn": "Air Cost TRN",
+    "cash x sale": "Cash X Sale",
+    "cash x re": "Cash X Refund",
+    "spyj sale": "SPYJ Sale",
+    "spjy refund": "SPYJ Refund",
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -58,6 +67,28 @@ def _get_file_stats(db: Session) -> dict:
         "processed_files":     db.query(UploadedFile).filter(UploadedFile.upload_status == UploadStatus.PROCESSED).count(),
         "failed_files":        db.query(UploadedFile).filter(UploadedFile.upload_status == UploadStatus.FAILED).count(),
     }
+
+
+def _sheet_context(sheet: UploadedSheet) -> str:
+    uploaded_file = sheet.uploaded_file
+    if not uploaded_file:
+        return ""
+    return " ".join(
+        str(value or "")
+        for value in (
+            uploaded_file.original_filename,
+            uploaded_file.stored_filename,
+            uploaded_file.file_path,
+        )
+    )
+
+
+def _sheet_group_key(sheet: UploadedSheet) -> str:
+    return _canonical_sheet_name(sheet.sheet_name, _sheet_context(sheet))
+
+
+def _sheet_display_name(group_key: str, fallback: str) -> str:
+    return _SHEET_LABELS.get(group_key, fallback)
 
 
 def _money(value: float | int | None) -> str:
@@ -399,17 +430,35 @@ def sheets_data_page(
     source_sheets = (
         db.query(UploadedSheet)
         .filter(UploadedSheet.uploaded_file_id.in_(file_ids))
-        .order_by(UploadedSheet.sheet_index, UploadedSheet.uploaded_file_id)
+        .order_by(UploadedSheet.uploaded_file_id, UploadedSheet.sheet_index)
         .all()
     )
+    source_sheet_mappings = [
+        {
+            "id": sheet.id,
+            "sheet_name": sheet.sheet_name,
+            "file_id": sheet.uploaded_file_id,
+            "filename": (
+                sheet.uploaded_file.original_filename
+                if sheet.uploaded_file
+                else f"File #{sheet.uploaded_file_id}"
+            ),
+            "total_rows": sheet.total_rows,
+            "suggested_role": _sheet_group_key(sheet),
+        }
+        for sheet in source_sheets
+    ]
 
     grouped_sheets: dict[str, dict] = {}
     for sheet in source_sheets:
+        if _should_skip_sheet(sheet.sheet_name):
+            continue
+        group_key = _sheet_group_key(sheet)
         item = grouped_sheets.setdefault(
-            sheet.sheet_name,
+            group_key,
             {
                 "id": sheet.id,
-                "sheet_name": sheet.sheet_name,
+                "sheet_name": _sheet_display_name(group_key, sheet.sheet_name),
                 "sheet_index": sheet.sheet_index,
                 "total_rows": 0,
                 "total_columns": sheet.total_columns,
@@ -433,6 +482,7 @@ def sheets_data_page(
         "uploaded_file": uploaded_file,
         "uploaded_file_ids": file_ids,
         "sheets":        list(grouped_sheets.values()),
+        "source_sheet_mappings": source_sheet_mappings,
     })
 
 
