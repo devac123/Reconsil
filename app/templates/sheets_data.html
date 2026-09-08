@@ -317,7 +317,7 @@
          class="sheet-panel flex flex-col gap-md">
 
       {% if uploaded_file_ids | length > 1 %}
-      <div class="bg-surface border border-outline-variant rounded-lg overflow-hidden">
+      <div class="bg-surface border border-outline-variant rounded-lg overflow-hidden" style="display: none;">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-sm px-md py-sm border-b border-outline-variant">
           <div>
             <p class="font-label-md text-label-md text-on-surface">Map Sheets for Merge</p>
@@ -671,6 +671,16 @@
     if (e.key === 'Enter') loadReconciliationData(1);
   });
 
+  ['recon-filter-cost', 'recon-filter-cashx', 'recon-filter-spyj', 'recon-filter-comparison'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => loadReconciliationData(1));
+  });
+
+  let reconFilterTimer = null;
+  document.getElementById('recon-filter-pnr')?.addEventListener('input', () => {
+    window.clearTimeout(reconFilterTimer);
+    reconFilterTimer = window.setTimeout(() => loadReconciliationData(1), 300);
+  });
+
   // ── Tab switching ──────────────────────────────────────────────────────────
   function switchSheet(sheetId) {
     if (!state[sheetId]) return;
@@ -1008,7 +1018,7 @@
   }
 
   async function loadReconciliationData(page) {
-    if (page < 1 || page > reconState.totalPages) return;
+    if (page < 1) return;
     reconState.page = page;
 
     const tbody = document.getElementById('recon-tbody');

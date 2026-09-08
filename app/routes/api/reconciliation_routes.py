@@ -24,7 +24,7 @@ from openpyxl.utils import get_column_letter
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
@@ -57,6 +57,36 @@ def _get_file_or_404(uploaded_file_id: int, db: Session) -> UploadedFile:
             detail=f"UploadedFile id={uploaded_file_id} not found.",
         )
     return f
+
+
+def _source_exists(column):
+    return and_(
+        column.isnot(None),
+        column != "",
+        func.lower(column) != "not found",
+    )
+
+
+def _source_missing(column):
+    return or_(
+        column.is_(None),
+        column == "",
+        func.lower(column) == "not found",
+    )
+
+
+def _source_value_exists(pnr_column, *amount_columns):
+    return and_(
+        _source_exists(pnr_column),
+        or_(*(column != 0 for column in amount_columns)),
+    )
+
+
+def _source_value_missing(pnr_column, *amount_columns):
+    return or_(
+        _source_missing(pnr_column),
+        and_(*(column == 0 for column in amount_columns)),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -249,21 +279,64 @@ def get_reconciliation_results(
         q = q.filter(ReconciliationResult.variance <= variance_max)
 
     # ── Source-existence filters (AND logic, independent per source) ───
-    # cost_pnr == "not found" means the PNR was absent from the Cost sheet
+    # In the UI, "Exist" means the source has a PNR and visible non-zero
+    # amount data, not only that a PNR appeared in a mapped sheet.
     if cost_filter == "exist":
-        q = q.filter(ReconciliationResult.cost_pnr != "not found")
+        q = q.filter(
+            _source_value_exists(
+                ReconciliationResult.cost_pnr,
+                ReconciliationResult.cost_sale,
+                ReconciliationResult.cost_refund,
+                ReconciliationResult.cost_net,
+            )
+        )
     elif cost_filter == "not_exist":
-        q = q.filter(ReconciliationResult.cost_pnr == "not found")
+        q = q.filter(
+            _source_value_missing(
+                ReconciliationResult.cost_pnr,
+                ReconciliationResult.cost_sale,
+                ReconciliationResult.cost_refund,
+                ReconciliationResult.cost_net,
+            )
+        )
 
     if cashx_filter == "exist":
-        q = q.filter(ReconciliationResult.cashx_pnr != "not found")
+        q = q.filter(
+            _source_value_exists(
+                ReconciliationResult.cashx_pnr,
+                ReconciliationResult.cashx_amount,
+                ReconciliationResult.cashx_refund,
+                ReconciliationResult.cashx_net,
+            )
+        )
     elif cashx_filter == "not_exist":
-        q = q.filter(ReconciliationResult.cashx_pnr == "not found")
+        q = q.filter(
+            _source_value_missing(
+                ReconciliationResult.cashx_pnr,
+                ReconciliationResult.cashx_amount,
+                ReconciliationResult.cashx_refund,
+                ReconciliationResult.cashx_net,
+            )
+        )
 
     if spyj_filter == "exist":
-        q = q.filter(ReconciliationResult.spyj_pnr != "not found")
+        q = q.filter(
+            _source_value_exists(
+                ReconciliationResult.spyj_pnr,
+                ReconciliationResult.spyj_amount,
+                ReconciliationResult.spyj_refund,
+                ReconciliationResult.spyj_net,
+            )
+        )
     elif spyj_filter == "not_exist":
-        q = q.filter(ReconciliationResult.spyj_pnr == "not found")
+        q = q.filter(
+            _source_value_missing(
+                ReconciliationResult.spyj_pnr,
+                ReconciliationResult.spyj_amount,
+                ReconciliationResult.spyj_refund,
+                ReconciliationResult.spyj_net,
+            )
+        )
 
     # ── Comparison filter (Matched / Variance) ─────────────────────────
     # Applies only to rows where all three sources are present.

@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 import re
 
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.models.uploaded_sheet import UploadedSheet
@@ -16,6 +17,8 @@ from app.repository.uploaded_sheet_repository import UploadedSheetRepository
 from app.service.File_reader import FileReaderService
 
 logger = logging.getLogger(__name__)
+
+_MYSQL_LOST_CONNECTION_ERRORS = {2006, 2013}
 
 
 def _normalise_sheet_name(sheet_name: str) -> str:
@@ -33,6 +36,17 @@ def _should_skip_sheet(sheet_name: str) -> bool:
             "reconciliation",
             "reconcilation",
         )
+    )
+
+
+def _is_lost_mysql_connection(exc: OperationalError) -> bool:
+    orig = getattr(exc, "orig", None)
+    code = None
+    if getattr(orig, "args", None):
+        code = orig.args[0]
+    return bool(
+        getattr(exc, "connection_invalidated", False)
+        or code in _MYSQL_LOST_CONNECTION_ERRORS
     )
 
 
@@ -109,67 +123,93 @@ class UploadedSheetService:
                 f"The workbook '{path.name}' contains no readable sheets."
             )
 
-        created_sheets: list[UploadedSheet] = []
+        sheet_metadata: list[dict] = []
+        for index, sheet_info in enumerate(sheets_data):
+            sheet_name: str = sheet_info["name"]
+            if _should_skip_sheet(sheet_name):
+                logger.info(
+                    "Skipping reconciliation/result sheet '%s' for uploaded_file_id=%s.",
+                    sheet_name,
+                    uploaded_file_id,
+                )
+                continue
 
-        try:
-            for index, sheet_info in enumerate(sheets_data):
-                sheet_name: str = sheet_info["name"]
-                if _should_skip_sheet(sheet_name):
-                    logger.info(
-                        "Skipping reconciliation/result sheet '%s' for uploaded_file_id=%s.",
-                        sheet_name,
+            df = FileReaderService.read_sheet_as_dataframe(
+                path,
+                sheet_name,
+                header_row=sheet_info.get("header_row"),
+            )
+
+            # Count only actual dataframe data rows. The header row is
+            # used as column names and is not included in len(df).
+            total_rows: int = len(df)
+            total_columns: int = len(df.columns)
+
+            logger.debug(
+                "  Sheet[%s] '%s' — rows=%s, columns=%s",
+                index,
+                sheet_name,
+                total_rows,
+                total_columns,
+            )
+            sheet_metadata.append(
+                {
+                    "sheet_name": sheet_name,
+                    "sheet_index": index,
+                    "total_rows": total_rows,
+                    "total_columns": total_columns,
+                }
+            )
+
+        if not sheet_metadata:
+            raise ValueError(
+                f"The workbook '{path.name}' contains no processable sheets."
+            )
+
+        created_sheets: list[UploadedSheet] = []
+        max_attempts = 2
+        for attempt in range(1, max_attempts + 1):
+            created_sheets = []
+            try:
+                for metadata in sheet_metadata:
+                    sheet_record = self._repo.create(
+                        uploaded_file_id=uploaded_file_id,
+                        **metadata,
+                    )
+                    created_sheets.append(sheet_record)
+
+                # Commit every flush in one atomic transaction
+                self._db.commit()
+
+                # Refresh all records so their auto-generated fields are populated
+                for sheet in created_sheets:
+                    self._db.refresh(sheet)
+                break
+
+            except OperationalError as exc:
+                self._db.rollback()
+                if attempt < max_attempts and _is_lost_mysql_connection(exc):
+                    logger.warning(
+                        "Lost MySQL connection while ingesting sheets for "
+                        "uploaded_file_id=%s; retrying metadata insert once.",
                         uploaded_file_id,
                     )
                     continue
-
-                df = FileReaderService.read_sheet_as_dataframe(
-                    path,
-                    sheet_name,
-                    header_row=sheet_info.get("header_row"),
+                logger.exception(
+                    "Failed to ingest sheets for uploaded_file_id=%s. "
+                    "Transaction rolled back.",
+                    uploaded_file_id,
                 )
+                raise
 
-                # Count only actual dataframe data rows. The header row is
-                # used as column names and is not included in len(df).
-                total_rows: int = len(df)
-                total_columns: int = len(df.columns)
-
-                logger.debug(
-                    "  Sheet[%s] '%s' — rows=%s, columns=%s",
-                    index,
-                    sheet_name,
-                    total_rows,
-                    total_columns,
+            except Exception:
+                self._db.rollback()
+                logger.exception(
+                    "Failed to ingest sheets for uploaded_file_id=%s. "
+                    "Transaction rolled back.",
+                    uploaded_file_id,
                 )
-
-                sheet_record = self._repo.create(
-                    uploaded_file_id=uploaded_file_id,
-                    sheet_name=sheet_name,
-                    sheet_index=index,
-                    total_rows=total_rows,
-                    total_columns=total_columns,
-                )
-                created_sheets.append(sheet_record)
-
-            if not created_sheets:
-                raise ValueError(
-                    f"The workbook '{path.name}' contains no processable sheets."
-                )
-
-            # Commit every flush in one atomic transaction
-            self._db.commit()
-
-            # Refresh all records so their auto-generated fields are populated
-            for sheet in created_sheets:
-                self._db.refresh(sheet)
-
-        except Exception:
-            self._db.rollback()
-            logger.exception(
-                "Failed to ingest sheets for uploaded_file_id=%s. "
-                "Transaction rolled back.",
-                uploaded_file_id,
-            )
-            raise
+                raise
 
         logger.info(
             "Ingested %s sheet(s) for uploaded_file_id=%s.",

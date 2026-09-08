@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # How many rows to send to the database per round-trip.
 # Keeps memory pressure low and avoids enormous single SQL statements.
-_CHUNK_SIZE = 500
+_CHUNK_SIZE = 1000
 
 
 class StagingRecordRepository:

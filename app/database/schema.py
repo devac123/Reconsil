@@ -40,6 +40,10 @@ def ensure_schema() -> None:
         column["name"]
         for column in inspector.get_columns("staging_records")
     }
+    staging_indexes = {
+        index["name"]
+        for index in inspector.get_indexes("staging_records")
+    }
 
     if "uploaded_file_id" not in staging_columns:
         logger.info("Adding staging_records.uploaded_file_id column.")
@@ -62,6 +66,14 @@ def ensure_schema() -> None:
                 SET sr.uploaded_file_id = us.uploaded_file_id
                 WHERE sr.uploaded_file_id IS NULL
             """))
+
+    if "ix_staging_records_sheet_row" not in staging_indexes:
+        logger.info("Adding staging_records sheet/row composite index.")
+        with engine.begin() as conn:
+            conn.execute(text(
+                "CREATE INDEX ix_staging_records_sheet_row "
+                "ON staging_records (uploaded_sheet_id, `row_number`)"
+            ))
 
     # ── reconciliation_results: booking_date ──────────────────────────────
     def _recon_columns() -> set[str]:

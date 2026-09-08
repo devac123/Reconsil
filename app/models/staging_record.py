@@ -4,6 +4,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     String,
@@ -21,6 +22,13 @@ class StagingRecord(Base):
     """
 
     __tablename__ = "staging_records"
+    __table_args__ = (
+        Index(
+            "ix_staging_records_sheet_row",
+            "uploaded_sheet_id",
+            "row_number",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(
         Integer,
@@ -43,8 +51,10 @@ class StagingRecord(Base):
     )
 
     row_number: Mapped[int] = mapped_column(
+        "row_number",
         Integer,
         nullable=False,
+        quote=True,
     )
 
 

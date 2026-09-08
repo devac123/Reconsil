@@ -699,29 +699,20 @@ class ReconciliationService:
     def _iter_rows(self, sheet_ids: list[int] | None):
         """
         Yield raw_data dicts for every staging record in *sheet_ids*.
-        Uses chunked iteration to stay memory-efficient.
+        Streams rows without OFFSET pagination so large mapped datasets do not
+        get slower as reconciliation advances through each sheet.
         """
         if not sheet_ids:
             return
 
-        for sheet_id in sheet_ids:
-            offset = 0
-            while True:
-                chunk = (
-                    self._db.query(StagingRecord.raw_data)
-                    .filter(StagingRecord.uploaded_sheet_id == sheet_id)
-                    .order_by(StagingRecord.row_number)
-                    .offset(offset)
-                    .limit(_CHUNK_SIZE)
-                    .all()
-                )
-                if not chunk:
-                    break
-                for (raw_data,) in chunk:
-                    yield raw_data
-                if len(chunk) < _CHUNK_SIZE:
-                    break
-                offset += _CHUNK_SIZE
+        query = (
+            self._db.query(StagingRecord.raw_data)
+            .filter(StagingRecord.uploaded_sheet_id.in_(sheet_ids))
+            .order_by(StagingRecord.uploaded_sheet_id, StagingRecord.row_number)
+            .yield_per(_CHUNK_SIZE)
+        )
+        for (raw_data,) in query:
+            yield raw_data
 
     # ------------------------------------------------------------------ #
     # Per-source aggregation                                               #

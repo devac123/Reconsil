@@ -43,9 +43,9 @@ from app.service import progress_store
 logger = logging.getLogger(__name__)
 
 # How many Excel rows to process and commit per batch.
-# Keeping this at 500 matches the repository's internal DB chunk size and
-# avoids building large in-memory lists before each commit.
-BATCH_SIZE = 500
+# This is large enough to reduce DB round-trips, while still avoiding
+# oversized INSERT payloads for JSON-heavy Excel rows.
+BATCH_SIZE = 1000
 
 # Maximum character length for string columns in staging_records.
 # Must match the String(n) lengths declared in the ORM model.
@@ -420,20 +420,13 @@ class StagingRecordService:
                 f"Cannot ingest rows: file not found at '{file_path}'."
             )
 
-        # Pre-scan total rows across all sheets so we can show overall percent.
-        total_rows_all_sheets = 0
-        sheet_row_counts: list[int] = []
-        for sheet in sheets:
-            if _should_skip_sheet(sheet.sheet_name):
-                sheet_row_counts.append(0)
-                continue
-            try:
-                df_tmp = FileReaderService.read_sheet_as_dataframe(path, sheet.sheet_name)
-                count  = len(df_tmp)
-            except Exception:
-                count = 0
-            sheet_row_counts.append(count)
-            total_rows_all_sheets += count
+        # Use the row counts already calculated during sheet ingestion. This
+        # avoids reading every worksheet an extra time before the real import.
+        sheet_row_counts = [
+            0 if _should_skip_sheet(sheet.sheet_name) else int(sheet.total_rows or 0)
+            for sheet in sheets
+        ]
+        total_rows_all_sheets = sum(sheet_row_counts)
 
         if job_id:
             progress_store.update_job(
@@ -459,7 +452,7 @@ class StagingRecordService:
                 total_rows_all_sheets=total_rows_all_sheets,
             )
             total_rows_inserted  += sheet_rows
-            cumulative_rows_done += sheet_total
+            cumulative_rows_done += sheet_rows if sheet_rows else sheet_total
 
         if job_id and finalize_progress:
             progress_store.update_job(
@@ -535,9 +528,11 @@ class StagingRecordService:
             row_offset = (batch_num - 1) * batch_size
 
             rows: list[dict] = []
-            for local_idx, (_, row_series) in enumerate(chunk_df.iterrows()):
+            for local_idx, row_values in enumerate(
+                chunk_df.itertuples(index=False, name=None)
+            ):
                 row_number = row_offset + local_idx + 1
-                raw_data   = _row_to_dict(columns, row_series)
+                raw_data   = _row_to_dict(columns, row_values)
 
                 pnr_raw    = _extract_field(raw_data, field_map["pnr"])
                 ticket_raw = _extract_field(raw_data, field_map["ticket_number"])

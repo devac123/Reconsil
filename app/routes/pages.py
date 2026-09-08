@@ -277,12 +277,12 @@ def _build_uploaded_file_items(files: list[UploadedFile]) -> list[dict]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Root → Dashboard redirect
+# Root → Upload redirect
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/", response_class=RedirectResponse)
 def root_redirect():
-    return RedirectResponse(url="/dashboard")
+    return RedirectResponse(url="/upload")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
