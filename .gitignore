@@ -1,6 +1,12 @@
 venv
 __pycache__
+
+# Local uploads and generated reconciliation/test files
+file/
+Reconciliations/
 *.xlsx
+*.xls
 *.csv
+
+# Local/admin-only tooling
 adminer.php
-Reconciliations
