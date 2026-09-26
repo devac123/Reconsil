@@ -1,7 +1,17 @@
+import os
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-DATABASE_URL = "mysql+pymysql://root:Admin%40123@localhost:3306/Rconsil"
+
+def _database_url() -> str:
+    url = os.getenv("DATABASE_URL") or os.getenv("MYSQL_URL")
+    if url:
+        return url.replace("mysql://", "mysql+pymysql://", 1)
+    return "mysql+pymysql://root:Admin%40123@localhost:3306/Rconsil"
+
+
+DATABASE_URL = _database_url()
 
 engine = create_engine(
     DATABASE_URL,
