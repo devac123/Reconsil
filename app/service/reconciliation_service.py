@@ -948,9 +948,9 @@ class ReconciliationService:
             amount = _safe_float(_field_value(raw, "cost_amount"))
             dc = str(_field_value(raw, "cost_debit_credit") or "").strip().lower()
 
-            if dc == "debit":
+            if dc in ("debit", "dr"):
                 agg[pnr]["sale"] += amount
-            elif dc == "credit":
+            elif dc in ("credit", "cr"):
                 agg[pnr]["refund"] += abs(amount)
 
             # Capture BookingDate (first non-null value wins)
