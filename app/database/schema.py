@@ -102,6 +102,19 @@ def ensure_schema() -> None:
                 "ON staging_records (uploaded_sheet_id, `row_number`)"
             ))
 
+    inspector.info_cache.clear()
+    staging_column_info = {
+        column["name"]: column
+        for column in inspector.get_columns("staging_records")
+    }
+    ticket_column = staging_column_info.get("ticket_number")
+    ticket_type = getattr(ticket_column.get("type"), "length", None) if ticket_column else None
+    if ticket_type is not None and ticket_type < 500:
+        logger.info("Increasing staging_records.ticket_number length to 500.")
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE staging_records MODIFY COLUMN ticket_number VARCHAR(500) NULL"))
+        inspector.info_cache.clear()
+
     _ensure_index(
         "uploaded_sheets",
         "ix_uploaded_sheets_uploaded_file_id",

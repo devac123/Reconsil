@@ -60,6 +60,7 @@ from app.models.staging_record import StagingRecord
 logger = logging.getLogger(__name__)
 
 _CHUNK_SIZE = 500
+_MAX_TICKET_NUMBER_LEN = 500
 ProgressCallback = Callable[[int, str], None]
 
 # ---------------------------------------------------------------------------
@@ -142,16 +143,24 @@ _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "gross_fare": ("GROSS FARE", "Gross Fare", "GrossFare", "Amount", "Total Amount"),
     "ticket_number": ("TKT NO", "Ticket No", "Ticket Number", "TicketNumbers", "Ticket Numbers"),
     "spyj_pnr": ("GDS PNR", "PNR", "Formatted PNR", "RecordLocator"),
-    "spyj_sale_amount": ("Total Amount", "Amount", "GROSS FARE", "Gross Fare"),
+    "spyj_sale_amount": (
+        "SPYJ Amt",
+        "SPYJ Amount",
+        "SPYJAmt",
+        "Total Amount",
+        "Amount",
+        "GROSS FARE",
+        "Gross Fare",
+    ),
     "spyj_refund_amount": ("Total Refund Amount", "Refund Amount", "Total Amount", "Amount"),
 }
 
 _ROLE_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
-    _SHEET_AIR_COST: ("cost_pnr", "cost_amount", "cost_debit_credit"),
-    _SHEET_CASHX_SALE: ("cashx_sale_pnr", "gross_fare"),
-    _SHEET_CASHX_RE: ("cashx_refund_pnr", "gross_fare"),
-    _SHEET_SPYJ_SALE: ("spyj_pnr", "spyj_sale_amount"),
-    _SHEET_SPJY_REF: ("spyj_pnr", "spyj_refund_amount"),
+    _SHEET_AIR_COST: ("cost_pnr", "cost_debit_credit"),
+    _SHEET_CASHX_SALE: ("cashx_sale_pnr",),
+    _SHEET_CASHX_RE: ("cashx_refund_pnr",),
+    _SHEET_SPYJ_SALE: ("spyj_pnr",),
+    _SHEET_SPJY_REF: ("spyj_pnr",),
 }
 
 
@@ -331,6 +340,14 @@ def _clean_text(value) -> str | None:
     text_value = str(value).strip()
     if not text_value or text_value.lower() in ("nan", "none", "nat"):
         return None
+    return text_value
+
+
+def _clean_ticket_number(value) -> str | None:
+    """Return ticket text sized for the indexed staging column."""
+    text_value = _clean_text(value)
+    if text_value and len(text_value) > _MAX_TICKET_NUMBER_LEN:
+        return text_value[:_MAX_TICKET_NUMBER_LEN]
     return text_value
 
 
@@ -715,6 +732,12 @@ class ReconciliationService:
             return
 
         pnr_fields = {"cost_pnr", "cashx_sale_pnr", "cashx_refund_pnr", "spyj_pnr"}
+        amount_fields = {
+            "cost_amount",
+            "gross_fare",
+            "spyj_sale_amount",
+            "spyj_refund_amount",
+        }
         updated_rows = 0
 
         for sheet_id, fields in column_map.items():
@@ -733,6 +756,8 @@ class ReconciliationService:
 
                     target_column = _FIELD_ALIASES[field][0]
                     value = raw.get(source_column)
+                    if field in amount_fields and _clean_text(value) is None:
+                        value = 0
                     if raw.get(target_column) != value:
                         raw[target_column] = value
                         changed = True
@@ -740,7 +765,7 @@ class ReconciliationService:
                     if field in pnr_fields:
                         record.pnr = _clean_text(value)
                     elif field == "ticket_number":
-                        record.ticket_number = _clean_text(value)
+                        record.ticket_number = _clean_ticket_number(value)
 
                 if changed:
                     record.raw_data = raw

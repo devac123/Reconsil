@@ -231,7 +231,12 @@
         try { job = JSON.parse(event.data); } catch { return; }
         if (job.status === 'done') {
           events.close();
-          window.location.reload();
+          const result = job.result || {};
+          if (result.uploaded_file_id) {
+            window.location.href = `/sheets-data/${result.uploaded_file_id}`;
+          } else {
+            window.location.reload();
+          }
         }
         if (job.status === 'failed') {
           events.close();

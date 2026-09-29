@@ -169,7 +169,7 @@ input[type="file"]::file-selector-button { display: none; }
            class="hidden mb-lg border border-outline-variant rounded bg-surface overflow-hidden">
         <div class="flex items-center justify-between gap-md px-md py-sm border-b border-outline-variant">
           <div>
-            <p class="font-label-md text-label-md text-on-surface">Map Sheets for Merge</p>
+            <p class="font-label-md text-label-md text-on-surface">Map Sheets for Reconciliation</p>
             <p id="sheet-selection-summary"
                class="font-body-sm text-body-sm text-outline text-[12px]">Map each sheet to a reconciliation type</p>
           </div>
@@ -191,7 +191,7 @@ input[type="file"]::file-selector-button { display: none; }
         <button id="combined-reconcile-btn"
                 class="hidden border border-outline-variant text-on-surface font-label-md text-label-md px-lg py-[10px] rounded
                        hover:bg-surface-container transition-colors flex items-center gap-xs">
-          Run Combined Reconciliation
+          Run Reconciliation
           <span class="material-symbols-outlined text-[18px]">sync_alt</span>
         </button>
       </div>
@@ -281,7 +281,7 @@ input[type="file"]::file-selector-button { display: none; }
     ],
     'spyj sale': [
       { key: 'spyj_pnr', label: 'PNR', aliases: ['GDS PNR', 'PNR', 'Formatted PNR', 'RecordLocator'] },
-      { key: 'spyj_sale_amount', label: 'Sale Amount', aliases: ['Total Amount', 'Amount', 'GROSS FARE', 'Gross Fare'] },
+      { key: 'spyj_sale_amount', label: 'Sale Amount', aliases: ['SPYJ Amt', 'SPYJ Amount', 'SPYJAmt', 'Total Amount', 'Amount', 'GROSS FARE', 'Gross Fare'] },
       { key: 'ticket_number', label: 'Ticket Number', aliases: ['TKT NO', 'Ticket No', 'Ticket Number', 'TicketNumbers', 'Ticket Numbers'] },
       { key: 'client_name', label: 'Client Name', aliases: ['Client Name', 'Customer Name', 'Passenger Name', 'Pax Name', 'Name', 'Name1'] },
       { key: 'client_code', label: 'Client Code', aliases: ['Client Code', 'Customer Code'] },
@@ -481,7 +481,7 @@ input[type="file"]::file-selector-button { display: none; }
 
   function renderSheetSelection(files) {
     const filesWithSheets = (files || []).filter(file => (file.sheets || []).length);
-    if (filesWithSheets.length < 2) {
+    if (!filesWithSheets.length) {
       sheetPanel.classList.add('hidden');
       sheetList.innerHTML = '';
       return;
@@ -673,13 +673,9 @@ input[type="file"]::file-selector-button { display: none; }
         resultArea.classList.remove('hidden');
         resultSuccess.classList.remove('hidden');
         resultError.classList.add('hidden');
-        if (uploadedFileIds.length > 1) {
-          combinedBtn.classList.remove('hidden');
-          renderSheetSelection(uploadedFiles);
-        } else {
-          combinedBtn.classList.add('hidden');
-          sheetPanel.classList.add('hidden');
-        }
+        combinedBtn.classList.remove('hidden');
+        combinedBtn.textContent = 'Run Reconciliation';
+        renderSheetSelection(uploadedFiles);
         startBtn.disabled    = false;
         startBtn.textContent = 'Start Upload';
       }
@@ -712,11 +708,11 @@ input[type="file"]::file-selector-button { display: none; }
   });
 
   combinedBtn.addEventListener('click', async () => {
-    if (uploadedFileIds.length < 2) return;
+    if (!uploadedFileIds.length) return;
     const selectedSheetIds = getSelectedSheetIds();
     const sheetRoleMap = getSheetRoleMap();
     if (!selectedSheetIds.length) {
-      document.getElementById('error-message').textContent = 'Please map at least one sheet before merge.';
+      document.getElementById('error-message').textContent = 'Please map at least one sheet before reconciliation.';
       resultError.classList.remove('hidden');
       return;
     }
@@ -741,7 +737,7 @@ input[type="file"]::file-selector-button { display: none; }
       });
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok) {
-        throw new Error(body.detail || 'Combined reconciliation failed.');
+        throw new Error(body.detail || 'Reconciliation failed.');
       }
       await new Promise((resolve, reject) => {
         const events = new EventSource(`/files/progress/${body.job_id}`);
@@ -755,7 +751,7 @@ input[type="file"]::file-selector-button { display: none; }
           }
           if (job.status === 'failed') {
             events.close();
-            reject(new Error(job.error || job.message || 'Combined reconciliation failed.'));
+            reject(new Error(job.error || job.message || 'Reconciliation failed.'));
           }
         };
         events.onerror = () => {
@@ -776,7 +772,7 @@ input[type="file"]::file-selector-button { display: none; }
       window.location.href = '/files/' + body.result_uploaded_file_id + '/reconcile/download';
     } catch (err) {
       combinedBtn.disabled = false;
-      combinedBtn.textContent = 'Run Combined Reconciliation';
+      combinedBtn.textContent = 'Run Reconciliation';
       markProgressFailed(err.message);
       document.getElementById('error-message').textContent = err.message;
       resultError.classList.remove('hidden');

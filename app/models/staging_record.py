@@ -66,7 +66,7 @@ class StagingRecord(Base):
     )
 
     ticket_number: Mapped[str | None] = mapped_column(
-        String(100),
+        String(500),
         nullable=True,
         index=True,
     )

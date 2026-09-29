@@ -18,7 +18,7 @@ Design notes
 - Per-sheet PNR / ticket / date column names are resolved through
   ``_SHEET_FIELD_MAP`` so the staging table always has populated searchable
   fields regardless of the source sheet's naming conventions.
-- ticket_number values that exceed the column length (100 chars) are
+- ticket_number values that exceed the column length (500 chars) are
   truncated with a warning so a single long cell never aborts the entire
   import.
 """
@@ -50,7 +50,7 @@ BATCH_SIZE = 1000
 # Maximum character length for string columns in staging_records.
 # Must match the String(n) lengths declared in the ORM model.
 _MAX_PNR_LEN            = 100
-_MAX_TICKET_NUMBER_LEN  = 100
+_MAX_TICKET_NUMBER_LEN  = 500
 _SHEET_MATCH_THRESHOLD  = 0.80
 
 
