@@ -497,7 +497,9 @@ class StagingRecordService:
         )
 
         df: pd.DataFrame = FileReaderService.read_sheet_as_dataframe(
-            file_path, sheet.sheet_name
+            file_path,
+            sheet.sheet_name,
+            header_row=getattr(sheet, "detected_header_row", None),
         )
 
         if df.empty:

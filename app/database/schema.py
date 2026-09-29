@@ -23,6 +23,31 @@ def ensure_schema() -> None:
 
     inspector = inspect(engine)
 
+    def _ensure_index(
+        table_name: str,
+        index_name: str,
+        column_sql: str,
+        column_names: tuple[str, ...],
+    ) -> None:
+        inspector.info_cache.clear()
+        if table_name not in inspector.get_table_names():
+            return
+
+        existing_indexes = inspector.get_indexes(table_name)
+        if any(
+            index["name"] == index_name
+            or tuple(index.get("column_names") or ()) == column_names
+            for index in existing_indexes
+        ):
+            return
+
+        logger.info("Adding %s.%s index.", table_name, index_name)
+        with engine.begin() as conn:
+            conn.execute(text(
+                f"CREATE INDEX {index_name} ON {table_name} ({column_sql})"
+            ))
+        inspector.info_cache.clear()
+
     # ── uploaded_files: batch_id ──────────────────────────────────────────
     uploaded_file_columns = {
         column["name"]
@@ -34,6 +59,8 @@ def ensure_schema() -> None:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE uploaded_files ADD COLUMN batch_id INT NULL"))
             conn.execute(text("CREATE INDEX ix_uploaded_files_batch_id ON uploaded_files (batch_id)"))
+
+    _ensure_index("uploaded_files", "ix_uploaded_files_batch_id", "batch_id", ("batch_id",))
 
     # ── staging_records: uploaded_file_id ────────────────────────────────
     staging_columns = {
@@ -74,6 +101,25 @@ def ensure_schema() -> None:
                 "CREATE INDEX ix_staging_records_sheet_row "
                 "ON staging_records (uploaded_sheet_id, `row_number`)"
             ))
+
+    _ensure_index(
+        "uploaded_sheets",
+        "ix_uploaded_sheets_uploaded_file_id",
+        "uploaded_file_id",
+        ("uploaded_file_id",),
+    )
+    _ensure_index(
+        "staging_records",
+        "ix_staging_records_uploaded_file_id",
+        "uploaded_file_id",
+        ("uploaded_file_id",),
+    )
+    _ensure_index(
+        "reconciliation_results",
+        "ix_reconciliation_results_uploaded_file_id",
+        "uploaded_file_id",
+        ("uploaded_file_id",),
+    )
 
     # ── reconciliation_results: booking_date ──────────────────────────────
     def _recon_columns() -> set[str]:
@@ -158,3 +204,10 @@ def ensure_schema() -> None:
                         ON DELETE CASCADE
                 )
             """))
+
+    _ensure_index(
+        "reconciliation_remarks",
+        "ix_reconciliation_remarks_result_id",
+        "result_id",
+        ("result_id",),
+    )

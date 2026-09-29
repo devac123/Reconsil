@@ -46,6 +46,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from difflib import SequenceMatcher
 import re
+from typing import Callable
 
 from sqlalchemy import insert, text
 from sqlalchemy.orm import Session
@@ -59,6 +60,7 @@ from app.models.staging_record import StagingRecord
 logger = logging.getLogger(__name__)
 
 _CHUNK_SIZE = 500
+ProgressCallback = Callable[[int, str], None]
 
 # ---------------------------------------------------------------------------
 # Sheet-name constants (normalised)
@@ -142,6 +144,14 @@ _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "spyj_pnr": ("GDS PNR", "PNR", "Formatted PNR", "RecordLocator"),
     "spyj_sale_amount": ("Total Amount", "Amount", "GROSS FARE", "Gross Fare"),
     "spyj_refund_amount": ("Total Refund Amount", "Refund Amount", "Total Amount", "Amount"),
+}
+
+_ROLE_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
+    _SHEET_AIR_COST: ("cost_pnr", "cost_amount", "cost_debit_credit"),
+    _SHEET_CASHX_SALE: ("cashx_sale_pnr", "gross_fare"),
+    _SHEET_CASHX_RE: ("cashx_refund_pnr", "gross_fare"),
+    _SHEET_SPYJ_SALE: ("spyj_pnr", "spyj_sale_amount"),
+    _SHEET_SPJY_REF: ("spyj_pnr", "spyj_refund_amount"),
 }
 
 
@@ -259,6 +269,15 @@ def _field_value(raw: dict, field_name: str):
         if _clean_text(value) is not None:
             return value
     return None
+
+
+def _raw_has_field_alias(raw: dict, field_name: str) -> bool:
+    """Return True when *raw* contains any known alias for logical field."""
+    raw_keys = {_normalise_name(str(key)) for key in raw.keys()}
+    return any(
+        _normalise_name(alias) in raw_keys
+        for alias in _FIELD_ALIASES.get(field_name, (field_name,))
+    )
 
 
 def _safe_float(value) -> float:
@@ -406,7 +425,11 @@ class ReconciliationService:
     # Public API                                                           #
     # ------------------------------------------------------------------ #
 
-    def reconcile(self, uploaded_file_id: int) -> int:
+    def reconcile(
+        self,
+        uploaded_file_id: int,
+        progress: ProgressCallback | None = None,
+    ) -> int:
         """
         Run reconciliation for *uploaded_file_id*.
 
@@ -418,7 +441,11 @@ class ReconciliationService:
         int
             Number of reconciled PNR rows produced.
         """
-        return self.reconcile_combined([uploaded_file_id], result_uploaded_file_id=uploaded_file_id)
+        return self.reconcile_combined(
+            [uploaded_file_id],
+            result_uploaded_file_id=uploaded_file_id,
+            progress=progress,
+        )
 
     def reconcile_combined(
         self,
@@ -426,6 +453,8 @@ class ReconciliationService:
         result_uploaded_file_id: int | None = None,
         selected_sheet_ids: list[int] | None = None,
         sheet_role_map: dict[int, str] | None = None,
+        column_map: dict[int, dict[str, str]] | None = None,
+        progress: ProgressCallback | None = None,
     ) -> int:
         """
         Run reconciliation across one or more uploaded workbooks.
@@ -484,8 +513,27 @@ class ReconciliationService:
             selected_sheet_ids,
             normalised_role_map,
         )
+        self._emit_progress(progress, 3, "Preparing reconciliation.")
 
-        # Remove stale results from a previous run (if any)
+        # Load sheet-id map: normalised_sheet_name → list[sheet_id]
+        self._emit_progress(progress, 8, "Mapping source sheets.")
+        sheet_map = self._load_sheet_map(
+            uploaded_file_ids,
+            selected_sheet_ids,
+            normalised_role_map,
+        )
+        logger.info("Sheet map: %s", {k: v for k, v in sheet_map.items()})
+
+        normalised_column_map = self._normalise_column_map(column_map)
+        if normalised_column_map:
+            self._emit_progress(progress, 10, "Applying column mappings.")
+            self._apply_column_map(normalised_column_map)
+
+        self._emit_progress(progress, 12, "Validating required columns.")
+        self._validate_required_columns(sheet_map)
+
+        # Remove stale results from a previous run only after validation passes.
+        self._emit_progress(progress, 15, "Clearing old reconciliation results.")
         self._db.execute(
             text(
                 "DELETE FROM reconciliation_results "
@@ -494,23 +542,22 @@ class ReconciliationService:
             {"fid": result_file_id},
         )
 
-        # Load sheet-id map: normalised_sheet_name → list[sheet_id]
-        sheet_map = self._load_sheet_map(
-            uploaded_file_ids,
-            selected_sheet_ids,
-            normalised_role_map,
-        )
-        logger.info("Sheet map: %s", {k: v for k, v in sheet_map.items()})
-
         # Build aggregates per data source
+        self._emit_progress(progress, 18, "Aggregating AIR COST rows.")
         cost_agg   = self._aggregate_cost(sheet_map)
+        self._emit_progress(progress, 30, "Aggregating CASH X sale rows.")
         cashx_sale = self._aggregate_gross_fare(sheet_map, _SHEET_CASHX_SALE)
+        self._emit_progress(progress, 40, "Aggregating CASH X refund rows.")
         cashx_re   = self._aggregate_gross_fare(sheet_map, _SHEET_CASHX_RE)
+        self._emit_progress(progress, 48, "Building CASH X ticket lookup.")
         cashx_client_by_ticket = self._build_cashx_client_by_ticket(sheet_map)
+        self._emit_progress(progress, 58, "Aggregating SPYJ sale rows.")
         spyj_sale  = self._aggregate_spyj_sale(sheet_map, cashx_client_by_ticket)
+        self._emit_progress(progress, 68, "Aggregating SPYJ refund rows.")
         spyj_ref   = self._aggregate_spyj_refund(sheet_map, cashx_client_by_ticket)
 
         # CASH X net = sale - refund  (keyed by PNR)
+        self._emit_progress(progress, 74, "Calculating net values.")
         cashx_agg = self._merge_sale_refund(cashx_sale, cashx_re)
 
         # SPYJ net = sale - refund
@@ -526,6 +573,7 @@ class ReconciliationService:
         logger.info("Total unique PNRs to reconcile: %s", len(all_pnrs))
 
         # Build result rows
+        self._emit_progress(progress, 80, f"Building {len(all_pnrs)} reconciliation rows.")
         rows = []
         now = datetime.utcnow()
 
@@ -613,18 +661,100 @@ class ReconciliationService:
             })
 
         # Bulk-insert in chunks
+        self._emit_progress(progress, 88, "Saving reconciliation rows.")
         total_inserted = self._bulk_insert(rows)
 
         # Now insert individual remark rows for every result
+        self._emit_progress(progress, 94, "Saving reconciliation remarks.")
         self._bulk_insert_remarks(rows)
 
         self._db.commit()
+        self._emit_progress(progress, 100, "Reconciliation complete.")
         logger.info(
             "Combined reconciliation complete for file_ids=%s: %s rows produced.",
             uploaded_file_ids,
             total_inserted,
         )
         return total_inserted
+
+    def _normalise_column_map(
+        self,
+        column_map: dict[int, dict[str, str]] | None,
+    ) -> dict[int, dict[str, str]]:
+        """Keep only non-empty field-to-uploaded-column mappings."""
+        if not column_map:
+            return {}
+
+        allowed_fields = set(_FIELD_ALIASES)
+        normalised: dict[int, dict[str, str]] = {}
+        for sheet_id, fields in column_map.items():
+            try:
+                parsed_sheet_id = int(sheet_id)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(fields, dict):
+                continue
+            clean_fields = {
+                str(field): str(column).strip()
+                for field, column in fields.items()
+                if field in allowed_fields and str(column or "").strip()
+            }
+            if clean_fields:
+                normalised[parsed_sheet_id] = clean_fields
+        return normalised
+
+    def _apply_column_map(self, column_map: dict[int, dict[str, str]]) -> None:
+        """
+        Copy user-selected source columns into canonical raw-data keys.
+
+        Original uploaded columns are preserved. The reconciliation formulas
+        continue to read their existing aliases, but renamed headers now land
+        under those canonical names before validation and aggregation.
+        """
+        if not column_map:
+            return
+
+        pnr_fields = {"cost_pnr", "cashx_sale_pnr", "cashx_refund_pnr", "spyj_pnr"}
+        updated_rows = 0
+
+        for sheet_id, fields in column_map.items():
+            records = (
+                self._db.query(StagingRecord)
+                .filter(StagingRecord.uploaded_sheet_id == sheet_id)
+                .yield_per(_CHUNK_SIZE)
+            )
+            for record in records:
+                raw = dict(record.raw_data or {})
+                changed = False
+
+                for field, source_column in fields.items():
+                    if source_column not in raw:
+                        continue
+
+                    target_column = _FIELD_ALIASES[field][0]
+                    value = raw.get(source_column)
+                    if raw.get(target_column) != value:
+                        raw[target_column] = value
+                        changed = True
+
+                    if field in pnr_fields:
+                        record.pnr = _clean_text(value)
+                    elif field == "ticket_number":
+                        record.ticket_number = _clean_text(value)
+
+                if changed:
+                    record.raw_data = raw
+                    record.updated_at = datetime.utcnow()
+                    updated_rows += 1
+
+        if updated_rows:
+            self._db.commit()
+            logger.info("Applied column mapping to %s staged row(s).", updated_rows)
+
+    @staticmethod
+    def _emit_progress(progress: ProgressCallback | None, percent: int, message: str) -> None:
+        if progress:
+            progress(percent, message)
 
     # ------------------------------------------------------------------ #
     # Sheet loading helpers                                                #
@@ -713,6 +843,54 @@ class ReconciliationService:
         )
         for (raw_data,) in query:
             yield raw_data
+
+    def _validate_required_columns(self, sheet_map: dict[str, list[int]]) -> None:
+        """
+        Ensure every mapped source sheet has the columns needed for calculation.
+
+        This catches renamed headers before deleting old results or producing
+        misleading "not found" reconciliation rows.
+        """
+        problems: list[str] = []
+
+        for role, required_fields in _ROLE_REQUIRED_FIELDS.items():
+            sheet_ids = sheet_map.get(role)
+            if not sheet_ids:
+                continue
+
+            sample_row = (
+                self._db.query(StagingRecord.raw_data, UploadedSheet.sheet_name)
+                .join(UploadedSheet, UploadedSheet.id == StagingRecord.uploaded_sheet_id)
+                .filter(StagingRecord.uploaded_sheet_id.in_(sheet_ids))
+                .order_by(StagingRecord.uploaded_sheet_id, StagingRecord.row_number)
+                .first()
+            )
+            if not sample_row:
+                problems.append(f"{role}: no imported rows found.")
+                continue
+
+            raw_data, sheet_name = sample_row
+            missing_fields = [
+                field
+                for field in required_fields
+                if not _raw_has_field_alias(raw_data or {}, field)
+            ]
+            if not missing_fields:
+                continue
+
+            details = []
+            for field in missing_fields:
+                aliases = " / ".join(_FIELD_ALIASES.get(field, (field,)))
+                details.append(f"{field} [{aliases}]")
+            problems.append(
+                f"{sheet_name}: missing required column(s): {', '.join(details)}"
+            )
+
+        if problems:
+            raise ValueError(
+                "Column validation failed. Please check sheet headers or add aliases. "
+                + " | ".join(problems)
+            )
 
     # ------------------------------------------------------------------ #
     # Per-source aggregation                                               #

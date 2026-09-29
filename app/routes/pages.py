@@ -91,6 +91,18 @@ def _sheet_display_name(group_key: str, fallback: str) -> str:
     return _SHEET_LABELS.get(group_key, fallback)
 
 
+def _sheet_columns(db: Session, sheet_id: int) -> list[str]:
+    row = (
+        db.query(StagingRecord.raw_data)
+        .filter(StagingRecord.uploaded_sheet_id == sheet_id)
+        .order_by(StagingRecord.row_number)
+        .first()
+    )
+    if not row or not isinstance(row.raw_data, dict):
+        return []
+    return list(row.raw_data.keys())
+
+
 def _money(value: float | int | None) -> str:
     return f"{float(value or 0):,.2f}"
 
@@ -290,9 +302,11 @@ def root_redirect():
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/upload", response_class=HTMLResponse)
-def upload_page(request: Request):
+def upload_page(request: Request, db: Session = Depends(get_db)):
+    organizations = db.query(Organization).order_by(Organization.name).all()
     return templates.TemplateResponse(request, "upload.html", {
         "active_page": "upload",
+        "organizations": organizations,
     })
 
 
@@ -444,6 +458,7 @@ def sheets_data_page(
                 else f"File #{sheet.uploaded_file_id}"
             ),
             "total_rows": sheet.total_rows,
+            "columns": _sheet_columns(db, sheet.id),
             "suggested_role": _sheet_group_key(sheet),
         }
         for sheet in source_sheets

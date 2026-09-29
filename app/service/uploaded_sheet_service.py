@@ -134,16 +134,13 @@ class UploadedSheetService:
                 )
                 continue
 
-            df = FileReaderService.read_sheet_as_dataframe(
-                path,
-                sheet_name,
-                header_row=sheet_info.get("header_row"),
-            )
-
-            # Count only actual dataframe data rows. The header row is
-            # used as column names and is not included in len(df).
-            total_rows: int = len(df)
-            total_columns: int = len(df.columns)
+            header_row = int(sheet_info.get("header_row") or 0)
+            total_rows = max(int(sheet_info.get("rows") or 0) - header_row - 1, 0)
+            total_columns = len([
+                column
+                for column in sheet_info.get("columns", [])
+                if str(column).strip() and not str(column).startswith("Unnamed:")
+            ])
 
             logger.debug(
                 "  Sheet[%s] '%s' — rows=%s, columns=%s",
@@ -158,6 +155,7 @@ class UploadedSheetService:
                     "sheet_index": index,
                     "total_rows": total_rows,
                     "total_columns": total_columns,
+                    "header_row": header_row,
                 }
             )
 
@@ -172,10 +170,16 @@ class UploadedSheetService:
             created_sheets = []
             try:
                 for metadata in sheet_metadata:
+                    create_payload = {
+                        key: value
+                        for key, value in metadata.items()
+                        if key != "header_row"
+                    }
                     sheet_record = self._repo.create(
                         uploaded_file_id=uploaded_file_id,
-                        **metadata,
+                        **create_payload,
                     )
+                    sheet_record.detected_header_row = metadata.get("header_row")
                     created_sheets.append(sheet_record)
 
                 # Commit every flush in one atomic transaction
@@ -184,6 +188,16 @@ class UploadedSheetService:
                 # Refresh all records so their auto-generated fields are populated
                 for sheet in created_sheets:
                     self._db.refresh(sheet)
+                    matching_metadata = next(
+                        (
+                            item
+                            for item in sheet_metadata
+                            if item["sheet_index"] == sheet.sheet_index
+                        ),
+                        None,
+                    )
+                    if matching_metadata:
+                        sheet.detected_header_row = matching_metadata.get("header_row")
                 break
 
             except OperationalError as exc:

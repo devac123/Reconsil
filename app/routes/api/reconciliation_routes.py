@@ -15,6 +15,9 @@ GET  /files/{uploaded_file_id}/reconcile/download
 
 import io
 import logging
+import threading
+import uuid
+import zipfile
 from typing import List, Optional
 
 import openpyxl
@@ -27,15 +30,19 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
+from app.database.database import SessionLocal
 from app.database.session import get_db
 from app.models.reconciliation_result import ReconciliationResult
 from app.models.reconciliation_remark import ReconciliationRemark
 from app.models.uploaded_file import UploadedFile
+from app.service import progress_store
 from app.service.reconciliation_service import ReconciliationService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/files", tags=["Reconciliation"])
+
+MAX_RECON_ROWS_PER_WORKBOOK = 1_000_000
 
 
 class CombinedReconciliationRequest(BaseModel):
@@ -43,6 +50,7 @@ class CombinedReconciliationRequest(BaseModel):
     result_uploaded_file_id: int | None = None
     selected_sheet_ids: list[int] | None = None
     sheet_role_map: dict[int, str] | None = None
+    column_map: dict[int, dict[str, str]] | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -93,6 +101,156 @@ def _source_value_missing(pnr_column, *amount_columns):
 # POST /files/{id}/reconcile
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _run_reconciliation_job(job_id: str, body: CombinedReconciliationRequest) -> None:
+    """Run reconciliation in a background thread and publish progress updates."""
+    db: Session = SessionLocal()
+    result_file_id = body.result_uploaded_file_id or body.uploaded_file_ids[0]
+
+    def _progress(percent: int, message: str) -> None:
+        progress_store.update_job(
+            job_id,
+            status="processing",
+            percent=percent,
+            message=message,
+        )
+
+    try:
+        svc = ReconciliationService(db)
+        total_rows = svc.reconcile_combined(
+            uploaded_file_ids=body.uploaded_file_ids,
+            result_uploaded_file_id=result_file_id,
+            selected_sheet_ids=body.selected_sheet_ids,
+            sheet_role_map=body.sheet_role_map,
+            column_map=body.column_map,
+            progress=_progress,
+        )
+        progress_store.update_job(
+            job_id,
+            status="done",
+            percent=100,
+            message=(
+                f"Reconciliation complete. {total_rows} PNR rows produced "
+                f"from {len(set(body.uploaded_file_ids))} workbook(s)."
+            ),
+            result={
+                "uploaded_file_ids": body.uploaded_file_ids,
+                "selected_sheet_ids": body.selected_sheet_ids,
+                "sheet_role_map": body.sheet_role_map,
+                "column_map": body.column_map,
+                "result_uploaded_file_id": result_file_id,
+                "status": "completed",
+                "reconciled_rows": total_rows,
+                "message": (
+                    f"Reconciliation complete. {total_rows} PNR rows produced "
+                    f"from {len(set(body.uploaded_file_ids))} workbook(s)."
+                ),
+            },
+        )
+    except ValueError as exc:
+        db.rollback()
+        progress_store.update_job(
+            job_id,
+            status="failed",
+            percent=100,
+            message="Reconciliation failed.",
+            error=str(exc),
+        )
+    except Exception as exc:
+        logger.exception(
+            "Background reconciliation failed for uploaded_file_ids=%s.",
+            body.uploaded_file_ids,
+        )
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        progress_store.update_job(
+            job_id,
+            status="failed",
+            percent=100,
+            message="Reconciliation failed.",
+            error=str(exc),
+        )
+    finally:
+        db.close()
+
+
+def _create_reconciliation_job(body: CombinedReconciliationRequest) -> dict:
+    job_id = str(uuid.uuid4())
+    progress_store.create_job(job_id)
+    progress_store.update_job(
+        job_id,
+        status="processing",
+        percent=0,
+        message="Queued reconciliation.",
+    )
+
+    t = threading.Thread(
+        target=_run_reconciliation_job,
+        args=(job_id, body),
+        daemon=True,
+        name=f"reconcile-{job_id[:8]}",
+    )
+    t.start()
+    logger.info(
+        "Started background reconciliation job '%s' for uploaded_file_ids=%s.",
+        job_id,
+        body.uploaded_file_ids,
+    )
+
+    return {
+        "job_id": job_id,
+        "status": "processing",
+        "uploaded_file_ids": body.uploaded_file_ids,
+        "result_uploaded_file_id": body.result_uploaded_file_id or body.uploaded_file_ids[0],
+    }
+
+
+@router.post(
+    "/reconcile-combined-async",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Run combined reconciliation in the background",
+)
+def run_combined_reconciliation_async(
+    body: CombinedReconciliationRequest,
+    db: Session = Depends(get_db),
+):
+    result_file_id = body.result_uploaded_file_id or body.uploaded_file_ids[0]
+    file_ids = list(dict.fromkeys([*body.uploaded_file_ids, result_file_id]))
+    existing_ids = {
+        file_id
+        for (file_id,) in (
+            db.query(UploadedFile.id)
+            .filter(UploadedFile.id.in_(file_ids))
+            .all()
+        )
+    }
+    missing_ids = [file_id for file_id in file_ids if file_id not in existing_ids]
+    if missing_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Uploaded file id(s) not found: {missing_ids}",
+        )
+    return _create_reconciliation_job(body)
+
+
+@router.post(
+    "/{uploaded_file_id}/reconcile-async",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Run reconciliation in the background",
+)
+def run_reconciliation_async(
+    uploaded_file_id: int = Path(..., gt=0),
+    db: Session = Depends(get_db),
+):
+    _get_file_or_404(uploaded_file_id, db)
+    return _create_reconciliation_job(
+        CombinedReconciliationRequest(
+            uploaded_file_ids=[uploaded_file_id],
+            result_uploaded_file_id=uploaded_file_id,
+        )
+    )
+
 @router.post(
     "/reconcile-combined",
     status_code=status.HTTP_200_OK,
@@ -116,6 +274,7 @@ def run_combined_reconciliation(
             result_uploaded_file_id=result_file_id,
             selected_sheet_ids=body.selected_sheet_ids,
             sheet_role_map=body.sheet_role_map,
+            column_map=body.column_map,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
@@ -133,6 +292,7 @@ def run_combined_reconciliation(
         "uploaded_file_ids": body.uploaded_file_ids,
         "selected_sheet_ids": body.selected_sheet_ids,
         "sheet_role_map": body.sheet_role_map,
+        "column_map": body.column_map,
         "result_uploaded_file_id": result_file_id,
         "status": "completed",
         "reconciled_rows": total_rows,
@@ -499,14 +659,20 @@ def download_reconciliation(
             ),
         )
 
-    xlsx_bytes = _build_excel(results, uploaded_file)
+    filename_base = _result_filename_base(uploaded_file)
 
-    filename = (
-        f"reconciliation_{uploaded_file.original_filename}"
-        .replace(" ", "_")
-        .replace(".xlsx", "")
-        + "_result.xlsx"
-    )
+    if len(results) > MAX_RECON_ROWS_PER_WORKBOOK:
+        zip_bytes = _build_split_excel_zip(results, uploaded_file, filename_base)
+        return StreamingResponse(
+            io.BytesIO(zip_bytes),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename_base}_result.zip"',
+            },
+        )
+
+    xlsx_bytes = _build_excel(results, uploaded_file)
+    filename = f"{filename_base}_result.xlsx"
 
     return StreamingResponse(
         io.BytesIO(xlsx_bytes),
@@ -540,6 +706,36 @@ _REMARK_COLOURS = {
     "Not in SPYJ":            PatternFill("solid", fgColor="FCE4D6"),
     "Variance":               PatternFill("solid", fgColor="FFDEDE"),  # light red
 }
+
+
+def _result_filename_base(uploaded_file: UploadedFile) -> str:
+    original = uploaded_file.original_filename or f"file_{uploaded_file.id}"
+    for suffix in (".xlsx", ".xls"):
+        if original.lower().endswith(suffix):
+            original = original[: -len(suffix)]
+            break
+    safe = original.replace(" ", "_")
+    return f"reconciliation_{safe}"
+
+
+def _build_split_excel_zip(
+    results: list[ReconciliationResult],
+    uploaded_file: UploadedFile,
+    filename_base: str,
+) -> bytes:
+    """Build multiple reconciliation workbooks and package them as a ZIP."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for index, start in enumerate(
+            range(0, len(results), MAX_RECON_ROWS_PER_WORKBOOK),
+            start=1,
+        ):
+            chunk = results[start : start + MAX_RECON_ROWS_PER_WORKBOOK]
+            archive.writestr(
+                f"{filename_base}_part_{index}.xlsx",
+                _build_excel(chunk, uploaded_file),
+            )
+    return buf.getvalue()
 
 
 def _build_excel(

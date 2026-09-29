@@ -78,45 +78,57 @@ def _detect_header_row(file_path: Path, sheet_name: str) -> int:
     return best_row
 
 
+def _detect_header_row_in_sheet(sheet_name: str, worksheet) -> int:
+    """Detect the header row from an already-open openpyxl worksheet."""
+    key = sheet_name.strip().lower()
+    if key in _SHEET_HEADER_ROW_OVERRIDE:
+        return _SHEET_HEADER_ROW_OVERRIDE[key]
+
+    for zero_based_idx, row in enumerate(
+        worksheet.iter_rows(min_row=1, max_row=_MAX_SCAN_ROWS, values_only=True)
+    ):
+        if _is_clean_header_row(row):
+            return zero_based_idx
+    return 0
+
+
 class FileReaderService:
 
     @staticmethod
     def read_excel(file_path: Path):
-        workbook = load_workbook(file_path, read_only=True)
-        sheet_names = workbook.sheetnames
-        total_sheets = len(sheet_names)
-        workbook.close()
+        workbook = load_workbook(file_path, read_only=True, data_only=True)
+        try:
+            sheet_names = workbook.sheetnames
+            response = {
+                "file_name": file_path.name,
+                "total_sheets": len(sheet_names),
+                "sheets": []
+            }
 
-        response = {
-            "file_name": file_path.name,
-            "total_sheets": total_sheets,
-            "sheets": []
-        }
+            for sheet_name in sheet_names:
+                ws = workbook[sheet_name]
+                header_row = _detect_header_row_in_sheet(sheet_name, ws)
+                total_rows = ws.max_row or 0
 
-        for sheet_name in sheet_names:
-            header_row = _detect_header_row(file_path, sheet_name)
-
-            wb = load_workbook(file_path, read_only=True)
-            ws = wb[sheet_name]
-            total_rows = ws.max_row
-
-            headers = []
-            for i, row in enumerate(
-                ws.iter_rows(min_row=1, max_row=header_row + 2, values_only=True)
-            ):
-                if i == header_row:
+                headers = []
+                for i, row in enumerate(
+                    ws.iter_rows(min_row=1, max_row=header_row + 1, values_only=True)
+                ):
+                    if i != header_row:
+                        continue
                     headers = [str(cell) if cell is not None else "" for cell in row]
                     break
-            wb.close()
 
-            response["sheets"].append({
-                "name":       sheet_name,
-                "rows":       total_rows,
-                "columns":    headers,
-                "header_row": header_row,
-            })
+                response["sheets"].append({
+                    "name":       sheet_name,
+                    "rows":       total_rows,
+                    "columns":    headers,
+                    "header_row": header_row,
+                })
 
-        return response
+            return response
+        finally:
+            workbook.close()
 
     @staticmethod
     def read_sheet_as_dataframe(

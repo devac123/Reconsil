@@ -34,6 +34,20 @@ input[type="file"]::file-selector-button { display: none; }
   <!-- Upload Panel -->
   <div class="w-full max-w-2xl bg-surface-container-lowest border border-outline-variant rounded-lg p-lg shadow-sm">
 
+    <div class="mb-lg">
+      <label for="organization-id" class="block font-label-md text-label-md text-on-surface mb-xs">
+        Organization
+      </label>
+      <select id="organization-id"
+              class="w-full h-[40px] bg-surface border border-outline-variant rounded px-md
+                     font-body-sm text-body-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30">
+        <option value="">Detect from filename</option>
+        {% for org in organizations %}
+          <option value="{{ org.id }}">{{ org.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
     <!-- Drag & Drop Zone -->
     <div id="drop-zone"
          class="upload-zone border-2 border-dashed border-outline-variant rounded-lg p-xl
@@ -242,6 +256,45 @@ input[type="file"]::file-selector-button { display: none; }
     { value: 'ignore', label: 'Ignore' },
   ];
 
+  const COLUMN_FIELDS_BY_ROLE = {
+    'air cost trn': [
+      { key: 'cost_pnr', label: 'PNR', aliases: ['RecordLocator', 'Record Locator', 'PNR', 'GDS PNR'] },
+      { key: 'cost_amount', label: 'Amount', aliases: ['PaymentAmount', 'Payment Amount', 'Amount', 'Total Amount'] },
+      { key: 'cost_debit_credit', label: 'Debit/Credit', aliases: ['Debit or Credit', 'Debit/Credit', 'Dr Cr', 'DR/CR'] },
+      { key: 'booking_date', label: 'Booking Date', aliases: ['BookingDate', 'Booking Date'] },
+      { key: 'booking_id', label: 'Booking ID', aliases: ['Booking ID', 'BookingID', 'Booking Number', 'RecordLocator'] },
+      { key: 'customer_name', label: 'Customer Name', aliases: ['Name1', 'Client Name', 'Customer Name', 'Passenger Name', 'Pax Name', 'Name'] },
+    ],
+    'cash x sale': [
+      { key: 'cashx_sale_pnr', label: 'PNR', aliases: ['Formatted PNR', 'PNR', 'GDS PNR', 'RecordLocator'] },
+      { key: 'gross_fare', label: 'Gross Fare', aliases: ['GROSS FARE', 'Gross Fare', 'GrossFare', 'Amount', 'Total Amount'] },
+      { key: 'ticket_number', label: 'Ticket Number', aliases: ['TKT NO', 'Ticket No', 'Ticket Number', 'TicketNumbers', 'Ticket Numbers'] },
+      { key: 'client_name', label: 'Client Name', aliases: ['Client Name', 'Customer Name', 'Passenger Name', 'Pax Name', 'Name', 'Name1'] },
+      { key: 'client_code', label: 'Client Code', aliases: ['Client Code', 'Customer Code'] },
+    ],
+    'cash x re': [
+      { key: 'cashx_refund_pnr', label: 'PNR', aliases: ['PNR formatted', 'Formatted PNR', 'PNR', 'GDS PNR', 'RecordLocator'] },
+      { key: 'gross_fare', label: 'Gross Fare', aliases: ['GROSS FARE', 'Gross Fare', 'GrossFare', 'Amount', 'Total Amount'] },
+      { key: 'ticket_number', label: 'Ticket Number', aliases: ['TKT NO', 'Ticket No', 'Ticket Number', 'TicketNumbers', 'Ticket Numbers'] },
+      { key: 'client_name', label: 'Client Name', aliases: ['Client Name', 'Customer Name', 'Passenger Name', 'Pax Name', 'Name', 'Name1'] },
+      { key: 'client_code', label: 'Client Code', aliases: ['Client Code', 'Customer Code'] },
+    ],
+    'spyj sale': [
+      { key: 'spyj_pnr', label: 'PNR', aliases: ['GDS PNR', 'PNR', 'Formatted PNR', 'RecordLocator'] },
+      { key: 'spyj_sale_amount', label: 'Sale Amount', aliases: ['Total Amount', 'Amount', 'GROSS FARE', 'Gross Fare'] },
+      { key: 'ticket_number', label: 'Ticket Number', aliases: ['TKT NO', 'Ticket No', 'Ticket Number', 'TicketNumbers', 'Ticket Numbers'] },
+      { key: 'client_name', label: 'Client Name', aliases: ['Client Name', 'Customer Name', 'Passenger Name', 'Pax Name', 'Name', 'Name1'] },
+      { key: 'client_code', label: 'Client Code', aliases: ['Client Code', 'Customer Code'] },
+    ],
+    'spjy refund': [
+      { key: 'spyj_pnr', label: 'PNR', aliases: ['GDS PNR', 'PNR', 'Formatted PNR', 'RecordLocator'] },
+      { key: 'spyj_refund_amount', label: 'Refund Amount', aliases: ['Total Refund Amount', 'Refund Amount', 'Total Amount', 'Amount'] },
+      { key: 'ticket_number', label: 'Ticket Number', aliases: ['TKT NO', 'Ticket No', 'Ticket Number', 'TicketNumbers', 'Ticket Numbers'] },
+      { key: 'client_name', label: 'Client Name', aliases: ['Client Name', 'Customer Name', 'Passenger Name', 'Pax Name', 'Name', 'Name1'] },
+      { key: 'client_code', label: 'Client Code', aliases: ['Client Code', 'Customer Code'] },
+    ],
+  };
+
   // ── Drag & Drop ──────────────────────────────────────────────────────────
   ['dragenter','dragover','dragleave','drop'].forEach(ev =>
     dropZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); })
@@ -353,6 +406,17 @@ input[type="file"]::file-selector-button { display: none; }
       .filter(Number.isFinite);
   }
 
+  function getColumnMap() {
+    const columnMap = {};
+    document.querySelectorAll('.upload-column-map').forEach(select => {
+      if (!select.value) return;
+      const sheetId = select.dataset.sheetId;
+      if (!columnMap[sheetId]) columnMap[sheetId] = {};
+      columnMap[sheetId][select.dataset.fieldKey] = select.value;
+    });
+    return columnMap;
+  }
+
   function updateSheetSelectionSummary() {
     const total = document.querySelectorAll('.merge-sheet-role').length;
     const selected = getSelectedSheetIds().length;
@@ -371,6 +435,50 @@ input[type="file"]::file-selector-button { display: none; }
     `).join('');
   }
 
+  function inferColumn(columns, aliases) {
+    const byKey = new Map((columns || []).map(column => [normaliseName(column), column]));
+    for (const alias of aliases || []) {
+      const match = byKey.get(normaliseName(alias));
+      if (match) return match;
+    }
+    return '';
+  }
+
+  function buildColumnOptions(columns, selectedColumn) {
+    return [
+      '<option value="">Select column</option>',
+      ...(columns || []).map(column => `
+        <option value="${escapeHtml(column)}" ${column === selectedColumn ? 'selected' : ''}>
+          ${escapeHtml(column)}
+        </option>
+      `),
+    ].join('');
+  }
+
+  function renderColumnMapping(container, sheetId, role, columns) {
+    const fields = COLUMN_FIELDS_BY_ROLE[role] || [];
+    if (!fields.length || !(columns || []).length) {
+      container.innerHTML = '';
+      container.classList.add('hidden');
+      return;
+    }
+
+    container.innerHTML = fields.map(field => {
+      const selectedColumn = inferColumn(columns, field.aliases);
+      return `
+        <label class="flex flex-col gap-xs min-w-0">
+          <span class="font-label-md text-label-md text-outline text-[10px] uppercase truncate">${escapeHtml(field.label)}</span>
+          <select class="upload-column-map border border-outline-variant rounded px-sm h-[32px] bg-surface text-on-surface font-body-sm text-body-sm"
+                  data-sheet-id="${sheetId}"
+                  data-field-key="${field.key}">
+            ${buildColumnOptions(columns, selectedColumn)}
+          </select>
+        </label>
+      `;
+    }).join('');
+    container.classList.remove('hidden');
+  }
+
   function renderSheetSelection(files) {
     const filesWithSheets = (files || []).filter(file => (file.sheets || []).length);
     if (filesWithSheets.length < 2) {
@@ -387,18 +495,23 @@ input[type="file"]::file-selector-button { display: none; }
         <div class="divide-y divide-outline-variant">
           ${(file.sheets || []).map(sheet => {
             const selectedRole = inferSheetRole(sheet.name, file.filename);
+            const columns = sheet.columns || [];
             return `
-            <div class="grid grid-cols-[minmax(0,1fr)_190px_auto] items-center gap-md px-md py-sm hover:bg-surface-container">
-              <span class="font-body-sm text-body-sm text-on-surface truncate">${escapeHtml(sheet.name)}</span>
-              <select class="merge-sheet-role border border-outline-variant rounded px-sm h-[34px] bg-surface text-on-surface font-body-sm text-body-sm"
-                      data-sheet-id="${sheet.id}"
-                      data-sheet-name="${escapeHtml(sheet.name)}"
-                      data-file-name="${escapeHtml(file.filename)}">
-                ${buildRoleOptions(selectedRole)}
-              </select>
-              <span class="font-data-mono text-data-mono text-outline text-[11px] whitespace-nowrap">
-                ${(sheet.total_rows || 0).toLocaleString()} rows
-              </span>
+            <div class="px-md py-sm hover:bg-surface-container">
+              <div class="grid grid-cols-[minmax(0,1fr)_190px_auto] items-center gap-md">
+                <span class="font-body-sm text-body-sm text-on-surface truncate">${escapeHtml(sheet.name)}</span>
+                <select class="merge-sheet-role border border-outline-variant rounded px-sm h-[34px] bg-surface text-on-surface font-body-sm text-body-sm"
+                        data-sheet-id="${sheet.id}"
+                        data-sheet-name="${escapeHtml(sheet.name)}"
+                        data-file-name="${escapeHtml(file.filename)}"
+                        data-columns="${escapeHtml(JSON.stringify(columns))}">
+                  ${buildRoleOptions(selectedRole)}
+                </select>
+                <span class="font-data-mono text-data-mono text-outline text-[11px] whitespace-nowrap">
+                  ${(sheet.total_rows || 0).toLocaleString()} rows
+                </span>
+              </div>
+              <div class="column-map-panel hidden mt-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-sm"></div>
             </div>
           `;
           }).join('')}
@@ -407,7 +520,14 @@ input[type="file"]::file-selector-button { display: none; }
     `).join('');
 
     sheetList.querySelectorAll('.merge-sheet-role').forEach(select => {
-      select.addEventListener('change', updateSheetSelectionSummary);
+      const row = select.closest('.px-md');
+      const panel = row ? row.querySelector('.column-map-panel') : null;
+      const columns = JSON.parse(select.dataset.columns || '[]');
+      if (panel) renderColumnMapping(panel, select.dataset.sheetId, select.value, columns);
+      select.addEventListener('change', () => {
+        if (panel) renderColumnMapping(panel, select.dataset.sheetId, select.value, columns);
+        updateSheetSelectionSummary();
+      });
     });
     sheetPanel.classList.remove('hidden');
     updateSheetSelectionSummary();
@@ -416,6 +536,16 @@ input[type="file"]::file-selector-button { display: none; }
   toggleSheetsBtn.addEventListener('click', () => {
     document.querySelectorAll('.merge-sheet-role').forEach(select => {
       select.value = inferSheetRole(select.dataset.sheetName || '', select.dataset.fileName || '');
+      const row = select.closest('.px-md');
+      const panel = row ? row.querySelector('.column-map-panel') : null;
+      if (panel) {
+        renderColumnMapping(
+          panel,
+          select.dataset.sheetId,
+          select.value,
+          JSON.parse(select.dataset.columns || '[]'),
+        );
+      }
     });
     updateSheetSelectionSummary();
   });
@@ -476,6 +606,8 @@ input[type="file"]::file-selector-button { display: none; }
 
     const formData = new FormData();
     selectedFiles.forEach(file => formData.append('files', file));
+    const organizationId = document.getElementById('organization-id').value;
+    if (organizationId) formData.append('organization_id', organizationId);
 
     let jobId;
     try {
@@ -486,6 +618,7 @@ input[type="file"]::file-selector-button { display: none; }
       if (selectedFiles.length === 1) {
         singleFormData.append('file', selectedFiles[0]);
       }
+      if (organizationId) singleFormData.append('organization_id', organizationId);
       const resp = await fetch(endpoint, {
         method: 'POST',
         body: selectedFiles.length > 1 ? formData : singleFormData,
@@ -589,25 +722,62 @@ input[type="file"]::file-selector-button { display: none; }
     }
     combinedBtn.disabled = true;
     combinedBtn.textContent = 'Reconciling…';
+    progressFill.style.animation = '';
+    progressFill.style.background = '';
+    progressIcon.classList.add('animate-spin', 'text-primary');
+    progressIcon.classList.remove('text-[#16A34A]', 'text-[#DC2626]');
+    progressIcon.textContent = 'sync';
+    showProgress('Queued reconciliation.', 0);
     try {
-      const resp = await fetch('/files/reconcile-combined', {
+      const resp = await fetch('/files/reconcile-combined-async', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           uploaded_file_ids: uploadedFileIds,
           selected_sheet_ids: selectedSheetIds,
           sheet_role_map: sheetRoleMap,
+          column_map: getColumnMap(),
         }),
       });
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok) {
         throw new Error(body.detail || 'Combined reconciliation failed.');
       }
+      await new Promise((resolve, reject) => {
+        const events = new EventSource(`/files/progress/${body.job_id}`);
+        events.onmessage = event => {
+          let job;
+          try { job = JSON.parse(event.data); } catch { return; }
+          setProgress(job.percent || 0, 0, 0, job.message || '');
+          if (job.status === 'done') {
+            events.close();
+            resolve(job.result || {});
+          }
+          if (job.status === 'failed') {
+            events.close();
+            reject(new Error(job.error || job.message || 'Combined reconciliation failed.'));
+          }
+        };
+        events.onerror = () => {
+          events.close();
+          reject(new Error('Lost connection while reconciliation was running. Refresh to check results.'));
+        };
+      });
+      progressFill.style.width = '100%';
+      progressPct.textContent = '100%';
+      progressFill.style.animation = 'none';
+      progressFill.style.background = '#16A34A';
+      progressIcon.classList.remove('animate-spin');
+      progressIcon.textContent = 'check_circle';
+      progressIcon.classList.remove('text-primary');
+      progressIcon.classList.add('text-[#16A34A]');
+      progressMsg.textContent = 'Reconciliation complete!';
       combinedBtn.textContent = 'Reconciliation Complete';
       window.location.href = '/files/' + body.result_uploaded_file_id + '/reconcile/download';
     } catch (err) {
       combinedBtn.disabled = false;
       combinedBtn.textContent = 'Run Combined Reconciliation';
+      markProgressFailed(err.message);
       document.getElementById('error-message').textContent = err.message;
       resultError.classList.remove('hidden');
     }

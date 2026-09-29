@@ -106,6 +106,15 @@
 
       <!-- Status / result banner (hidden until JS populates it) -->
       <div id="recon-status" class="hidden rounded-lg px-lg py-md mb-lg text-center font-body-md text-body-md"></div>
+      <div id="recon-progress" class="hidden w-full mb-lg">
+        <div class="h-3 bg-surface-container rounded-full overflow-hidden">
+          <div id="recon-progress-fill" class="h-3 bg-secondary rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <div class="flex justify-between mt-xs font-body-sm text-body-sm text-on-surface-variant">
+          <span id="recon-progress-message">Queued reconciliation.</span>
+          <span id="recon-progress-percent" class="font-data-mono text-data-mono">0%</span>
+        </div>
+      </div>
 
       <div class="flex flex-col sm:flex-row gap-md justify-center items-center">
 
@@ -159,6 +168,17 @@ async function runReconciliation(fileId) {
   const label       = document.getElementById('btn-reconcile-label');
   const statusBox   = document.getElementById('recon-status');
   const downloadBtn = document.getElementById('btn-download');
+  const progressBox = document.getElementById('recon-progress');
+  const progressFill = document.getElementById('recon-progress-fill');
+  const progressMsg = document.getElementById('recon-progress-message');
+  const progressPct = document.getElementById('recon-progress-percent');
+
+  function setReconProgress(percent, message) {
+    const value = Math.max(0, Math.min(100, Number(percent) || 0));
+    progressFill.style.width = value + '%';
+    progressPct.textContent = value + '%';
+    progressMsg.textContent = message || '';
+  }
 
   // Disable button and show loading state
   btn.disabled = true;
@@ -167,30 +187,60 @@ async function runReconciliation(fileId) {
     + 'bg-surface border border-outline-variant text-on-surface-variant';
   statusBox.textContent = 'Reconciliation in progress — this may take a moment for large files…';
   statusBox.classList.remove('hidden');
+  progressBox.classList.remove('hidden');
+  setReconProgress(0, 'Queued reconciliation.');
   downloadBtn.classList.add('hidden');
 
   try {
-    const resp = await fetch(`/files/${fileId}/reconcile`, { method: 'POST' });
+    const resp = await fetch(`/files/${fileId}/reconcile-async`, { method: 'POST' });
     const data = await readResponseBody(resp);
 
     if (resp.ok) {
-      statusBox.className = 'rounded-lg px-lg py-md mb-lg text-center font-body-md text-body-md '
-        + 'bg-[#F0FDF4] border border-[#BBF7D0] text-[#166534]';
-      statusBox.textContent = `✓ ${data.message}`;
-      downloadBtn.classList.remove('hidden');
-      label.textContent = 'Run Again';
+      const events = new EventSource(`/files/progress/${data.job_id}`);
+      events.onmessage = event => {
+        let job;
+        try { job = JSON.parse(event.data); } catch { return; }
+        setReconProgress(job.percent || 0, job.message || '');
+
+        if (job.status === 'done') {
+          events.close();
+          const result = job.result || {};
+          statusBox.className = 'rounded-lg px-lg py-md mb-lg text-center font-body-md text-body-md '
+            + 'bg-[#F0FDF4] border border-[#BBF7D0] text-[#166534]';
+          statusBox.textContent = `✓ ${result.message || job.message || 'Reconciliation complete.'}`;
+          downloadBtn.classList.remove('hidden');
+          label.textContent = 'Run Again';
+          btn.disabled = false;
+        }
+        if (job.status === 'failed') {
+          events.close();
+          statusBox.className = 'rounded-lg px-lg py-md mb-lg text-center font-body-md text-body-md '
+            + 'bg-[#FEF2F2] border border-[#FECACA] text-[#991B1B]';
+          statusBox.textContent = `✗ Error: ${job.error || job.message || 'Reconciliation failed.'}`;
+          label.textContent = 'Run Reconciliation';
+          btn.disabled = false;
+        }
+      };
+      events.onerror = () => {
+        events.close();
+        statusBox.className = 'rounded-lg px-lg py-md mb-lg text-center font-body-md text-body-md '
+          + 'bg-[#FEF2F2] border border-[#FECACA] text-[#991B1B]';
+        statusBox.textContent = '✗ Lost connection while reconciliation was running. Refresh to check results.';
+        label.textContent = 'Run Reconciliation';
+        btn.disabled = false;
+      };
     } else {
       statusBox.className = 'rounded-lg px-lg py-md mb-lg text-center font-body-md text-body-md '
         + 'bg-[#FEF2F2] border border-[#FECACA] text-[#991B1B]';
       statusBox.textContent = `✗ Error: ${data.detail || 'Reconciliation failed.'}`;
       label.textContent = 'Run Reconciliation';
+      btn.disabled = false;
     }
   } catch (err) {
     statusBox.className = 'rounded-lg px-lg py-md mb-lg text-center font-body-md text-body-md '
       + 'bg-[#FEF2F2] border border-[#FECACA] text-[#991B1B]';
     statusBox.textContent = `✗ Network error: ${err.message}`;
     label.textContent = 'Run Reconciliation';
-  } finally {
     btn.disabled = false;
   }
 }

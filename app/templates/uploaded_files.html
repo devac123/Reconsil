@@ -146,6 +146,13 @@
                   <button onclick="retryProcess({{ item.id }}, this)"
                           class="text-error font-label-md text-label-md hover:underline">Retry</button>
                 {% endif %}
+                {% if item.is_batch %}
+                  <span class="text-outline-variant">·</span>
+                  <button onclick="appendFilesToBatch({{ item.id }}, this)"
+                          class="text-secondary font-label-md text-label-md hover:underline flex items-center gap-xs">
+                    <span class="material-symbols-outlined text-[14px]">add</span>Add Files
+                  </button>
+                {% endif %}
                 <span class="text-outline-variant">·</span>
                 <button onclick="deleteUploadItem({{ item.file_ids[0] }}, {{ 'true' if item.is_batch else 'false' }}, this)"
                         class="text-error font-label-md text-label-md hover:underline flex items-center gap-xs">
@@ -184,6 +191,68 @@
   document.getElementById('filter-org').addEventListener('change', applyFilters);
   document.getElementById('filter-status').addEventListener('change', applyFilters);
 
+  function chooseExcelFiles() {
+    return new Promise(resolve => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.xlsx,.xls';
+      input.multiple = true;
+      input.addEventListener('change', () => resolve(Array.from(input.files || [])), { once: true });
+      input.click();
+    });
+  }
+
+  async function appendFilesToBatch(batchId, btn) {
+    const files = await chooseExcelFiles();
+    if (!files.length) return;
+
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="material-symbols-outlined text-[14px] animate-spin">sync</span>Uploading…';
+
+    const formData = new FormData();
+    files.forEach(file => formData.append('files', file));
+
+    try {
+      const resp = await fetch(`/files/batches/${batchId}/upload-async`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.detail || 'Upload failed.');
+      }
+      const data = await resp.json();
+      btn.innerHTML = '<span class="material-symbols-outlined text-[14px] animate-spin">sync</span>Processing…';
+
+      const events = new EventSource(`/files/progress/${data.job_id}`);
+      events.onmessage = event => {
+        let job;
+        try { job = JSON.parse(event.data); } catch { return; }
+        if (job.status === 'done') {
+          events.close();
+          window.location.reload();
+        }
+        if (job.status === 'failed') {
+          events.close();
+          alert(job.error || job.message || 'Batch append failed.');
+          btn.disabled = false;
+          btn.innerHTML = originalHtml;
+        }
+      };
+      events.onerror = () => {
+        events.close();
+        alert('Lost connection while adding files. Refresh the page to check the batch status.');
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      };
+    } catch (err) {
+      alert(err.message || 'Upload failed.');
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  }
+
   // Retry processing (re-trigger transaction processing)
   async function retryProcess(fileId, btn) {
     btn.disabled = true;
@@ -213,7 +282,13 @@
 
     btn.disabled = true;
     const originalHtml = btn.innerHTML;
-    btn.innerHTML = '<span class="material-symbols-outlined text-[14px] animate-spin">sync</span>Deleting…';
+    const setDeletingText = (message) => {
+      const icon = document.createElement('span');
+      icon.className = 'material-symbols-outlined text-[14px] animate-spin';
+      icon.textContent = 'sync';
+      btn.replaceChildren(icon, document.createTextNode(message));
+    };
+    setDeletingText('Deleting…');
 
     try {
       const resp = await fetch(`/files/${fileId}?delete_batch=${deleteBatch ? 'true' : 'false'}`, {
@@ -223,7 +298,38 @@
         const data = await resp.json().catch(() => ({}));
         throw new Error(data.detail || 'Delete failed.');
       }
-      window.location.reload();
+      const data = await resp.json();
+      if (!data.job_id) {
+        window.location.reload();
+        return;
+      }
+
+      setDeletingText('Deleting…');
+      const events = new EventSource(`/files/progress/${data.job_id}`);
+      events.onmessage = event => {
+        let job;
+        try { job = JSON.parse(event.data); } catch { return; }
+
+        if (job.message) {
+          setDeletingText(job.message);
+        }
+        if (job.status === 'done') {
+          events.close();
+          window.location.reload();
+        }
+        if (job.status === 'failed') {
+          events.close();
+          alert(job.error || job.message || 'Delete failed.');
+          btn.disabled = false;
+          btn.innerHTML = originalHtml;
+        }
+      };
+      events.onerror = () => {
+        events.close();
+        alert('Lost connection while deleting. Refresh the page to check the upload list.');
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      };
     } catch (err) {
       alert(err.message || 'Delete failed.');
       btn.disabled = false;
